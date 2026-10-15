@@ -64,7 +64,9 @@ it.each(['replay', 'duplicate'])('requires a barrier before promoting a %s', asy
   const client = connection([0, 0]);
   client.sendCommand.mockResolvedValueOnce(kind === 'replay' ? ['reserved', 'key', '100', '1-0', 'replay'] : ['already_placed', 'key', '100', '1-0']);
   mocks.create.mockReturnValue(client);
-  expect(await new DurableAdmission('redis://unused').place('sale', { identifier: 'person', idempotencyKey: 'key' })).toEqual({ status: 'PROCESSING', phase: 'confirming' });
+  const confirming = { status: 'PROCESSING', phase: 'confirming' };
+  expect(await new DurableAdmission('redis://unused').place('sale', { identifier: 'person', idempotencyKey: 'key' })).toEqual(kind === 'duplicate'
+    ? { status: 'REJECTED', reason: 'already_placed', existingOrder: confirming } : confirming);
   expect(client.sendCommand.mock.calls.at(-1)?.[0]?.[0]).toBe('WAITAOF');
 });
 it('keeps a second socket independent while the first barrier is blocked', async () => {
@@ -82,4 +84,12 @@ it('refuses AOF write errors even with safe persistence configuration', async ()
   mocks.create.mockReturnValue(client);
   expect((await new DurableAdmission('redis://unused').lookup('sale', 'person')).status).toBe('confirming');
   expect(client.sendCommand).not.toHaveBeenCalled();
+});
+it.each([true, false])('confirms rejection outcome durability before returning it (durable=%s)', async durable => {
+  const client = connection(durable ? [1, 0] : [0, 0]);
+  client.sendCommand.mockResolvedValueOnce(['rejected', 'upcoming']);
+  mocks.create.mockReturnValue(client);
+  expect(await new DurableAdmission('redis://unused').place('sale', { identifier: 'person', idempotencyKey: 'key' })).toEqual(durable
+    ? { status: 'REJECTED', reason: 'upcoming' } : { status: 'PROCESSING', phase: 'confirming' });
+  expect(client.sendCommand.mock.calls.at(-1)?.[0]?.[0]).toBe('WAITAOF');
 });

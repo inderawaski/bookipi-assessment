@@ -61,9 +61,15 @@ export class DurableAdmission {
     try {
       return await this.own(async redis => {
         const result = await admitPurchase(redis, payload.saleId, payload);
-        if (result.status === 'rejected') return { status: 'REJECTED', reason: result.reason };
-        const confirmation = await this.confirm(redis, payload.saleId, payload.identifier);
-        if (confirmation.status !== 'durable') return { status: 'PROCESSING', phase: 'confirming' };
+        if (result.status === 'rejected') {
+          await this.barrier(redis);
+          return { status: 'REJECTED', reason: result.reason };
+        }
+        const confirmation = await this.confirm(redis, payload.saleId, payload.identifier).catch(() => ({ status: 'confirming' } as const));
+        if (confirmation.status !== 'durable') {
+          const existingOrder = { status: 'PROCESSING', phase: 'confirming' } as const;
+          return result.status === 'already_placed' ? { status: 'REJECTED', reason: 'already_placed', existingOrder } : existingOrder;
+        }
         const existingOrder = { status: 'PROCESSING', phase: 'queued' } as const;
         return result.status === 'already_placed' ? { status: 'REJECTED', reason: 'already_placed', existingOrder } : existingOrder;
       });

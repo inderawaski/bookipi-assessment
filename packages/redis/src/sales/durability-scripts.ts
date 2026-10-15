@@ -49,6 +49,17 @@ end
 local completed = KEYS[1] .. ':completed'
 local kind = redis.call('TYPE', completed).ok
 if (kind ~= 'none' and kind ~= 'hash') or redis.call('PTTL', completed) >= 0 then return fail() end
+local outcomes = KEYS[1] .. ':outcomes'
+local outcomeKind = redis.call('TYPE', outcomes).ok
+if (outcomeKind ~= 'none' and outcomeKind ~= 'hash') or redis.call('PTTL', outcomes) >= 0 then return fail() end
+local outcomeEntries = redis.call('HGETALL', outcomes)
+for i = 1, #outcomeEntries, 2 do
+  local ok, outcome = pcall(cjson.decode, outcomeEntries[i+1])
+  if not ok or type(outcome) ~= 'table' or type(outcome.identifier) ~= 'string' or
+     redis.call('HEXISTS', KEYS[3], outcomeEntries[i]) == 1 or
+     (outcome.reason ~= 'upcoming' and outcome.reason ~= 'ended' and outcome.reason ~= 'sold_out' and outcome.reason ~= 'already_placed') then return fail() end
+  if outcome.reason == 'already_placed' and redis.call('HEXISTS', KEYS[2], outcome.identifier) == 0 then return fail() end
+end
 for _, suffix in ipairs({':retries', ':retry_due', ':quarantine'}) do
   local key = KEYS[1] .. suffix
   local expected = suffix == ':retry_due' and 'zset' or 'hash'

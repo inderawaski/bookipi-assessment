@@ -20,3 +20,9 @@ describe('configuration', () => {
     expect(() => parseConfiguration({ ...valid, DEPENDENCY_TIMEOUT_MS: '0' }, 'api')).toThrow();
   });
 });
+it('validates an optional exact web origin', () => {
+  expect(parseConfiguration({ ...valid, WEB_ORIGIN: 'http://localhost:8080' }, 'api').webOrigin).toBe('http://localhost:8080');
+  for (const WEB_ORIGIN of ['*', 'null', 'https://example.com/path', 'https://user:password@example.com', 'https://example.com/']) {
+    expect(() => parseConfiguration({ ...valid, WEB_ORIGIN }, 'api')).toThrow();
+  }
+});

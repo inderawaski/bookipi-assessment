@@ -105,3 +105,17 @@ No browser or stress run was needed for this backend recovery change. Human
 checkpoint C remains pending; follow [the recovery runbook](recovery.md).
 Startup reconciliation scans retained sale state atomically and can delay readiness
 for large sales; no new throughput or storage-loss guarantees are claimed.
+
+## DEV-13 API verification
+
+Verified on 2026-10-15:
+
+- `pnpm test:unit`: 57 tests across 14 files passed.
+- `pnpm test:integration`: 36 tests across eight files passed using isolated PostgreSQL and Redis containers.
+- `pnpm test:failure`: seven tests across two files passed.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check`: passed.
+- Pinned Nginx image `nginx -t` with placeholder upstream hosts: passed.
+
+API coverage includes strict schemas, malformed/oversized input, generic encoded identifiers, normalization collisions, idempotency conflicts, explicit duplicates, confirming/queued/delayed states, committed success, sale status/countdown data, missing sales, CORS, database and Redis unavailability, lost-response replay, and replay after closing. A closing-time test exposed the earlier admission implementation's rejection reevaluation; request outcomes now retain their original key/payload binding, including rejections. The old reevaluation assertion and documentation were aligned with the shared contract. Unconfirmed rejection writes remain PROCESSING.
+
+Self-review checked database authority for SUCCESS, fenced absence after reconciliation, preservation of admission evidence after read failures, outcome retention and AOF barriers, schema serialization, input limits, and identifier-free API/proxy logs. Automatic API request logs are disabled; proxy access logs contain only method/status/elapsed time and request error logs are suppressed because Nginx includes raw URLs. No browser or stress run was performed for these backend routes; no new capacity claim is made. The human duplicate/uncertain-response walkthrough remains pending.

@@ -80,15 +80,17 @@ it('records monotonic stream execution order in a concurrent admitted batch', as
   } finally { f.redis.destroy(); }
 });
 
-it.each(['upcoming', 'ended', 'sold_out'] as const)('rejects %s without per-request storage', async reason => {
+it.each(['upcoming', 'ended', 'sold_out'] as const)('retains %s outcomes without allocating stock', async reason => {
   const f = await fixture(reason === 'sold_out' ? 0 : 1, reason === 'sold_out' ? 'open' : reason);
   try {
     expect(await f.place('person', 'retry')).toEqual({ status: 'rejected', reason });
     for (const key of f.keys.slice(1)) expect(await f.redis.exists(key)).toBe(0);
-    // Rejected attempts are reevaluated: the same key can admit when the window opens.
+    expect(await f.place('different', 'retry')).toEqual({ status: 'rejected', reason: 'idempotency_conflict' });
+    // Opening the window cannot change the original request outcome.
     if (reason === 'upcoming') {
       await f.redis.hSet(f.keys[0], 'starts_at', '1');
-      expect((await f.place('person', 'retry')).status).toBe('reserved');
+      expect(await f.place('person', 'retry')).toEqual({ status: 'rejected', reason: 'upcoming' });
+      expect((await f.place('person', 'new-request')).status).toBe('reserved');
     }
   } finally { f.redis.destroy(); }
 });

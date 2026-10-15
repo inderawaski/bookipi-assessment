@@ -16,7 +16,7 @@ Configuration is initialized only by the existing safe configuration script. All
 
 After validating key ownership, types, non-expiration, numeric configuration and allocation counts, admission checks allocated request replay/payload conflict, then allocated identifier, then the Redis TIME window (`start <= now < end`), then stock. Replay returns the original timestamp and stream ID even after closing or sellout. A new request for an allocated identifier returns `already_placed` with its original reservation. It creates no new allocation or request mapping.
 
-Upcoming, ended, sold-out, duplicate and conflict rejections create no persistent per-request record. Their retries are reevaluated against current state; an upcoming rejection may later admit using the same key. Only **allocated** request keys retain stable replay outcomes. This bounds rejection storage under a burst and prevents a rejection from overwriting an allocation.
+Upcoming, ended, sold-out and duplicate outcomes retain request-key bindings separately from allocations. Replays preserve the original outcome even after the window changes; a changed identifier conflicts. A new logical attempt needs a new key. Outcome storage grows with distinct attempted keys during the retained sale lifetime, including rejected traffic. Conflicts preserve the original binding and never overwrite an allocation.
 
 Accepted work decrements stock, records associations and appends a stream entry inside one script, with no client-side interleaving. `admittedAtMs` comes from Redis TIME; the stream ID is the authoritative execution-order sequence (including same-millisecond admissions). Neither represents client arrival or network order. Millisecond timestamps alone do not break ties.
 
@@ -31,3 +31,5 @@ For admission alone, run `pnpm test:integration tests/integration/admission.test
 Durable acknowledgement, worker authority, and restart recovery are defined in
 [Admission durability protocol](admission-durability.md). Raw `reserved` or
 `already_placed` results must never be exposed as durable placement evidence.
+
+DEV-13 retains non-allocation outcomes in the sale-scoped `:outcomes` hash. Window/stock rejections and deliberate duplicate requests bind their key to the normalized identifier, so retries cannot turn an earlier rejection into a different placement. Rejected responses also wait for local AOF confirmation; an unconfirmed write remains PROCESSING/confirming. Outcome records do not change stock or allocation counters and have no TTL. Startup reconciliation validates their shape and associations.

@@ -65,18 +65,40 @@ if previous then
   if previous ~= identifier then return {'rejected', 'idempotency_conflict'} end
   return {'reserved', request, tostring(record.admittedAtMs), record.streamId, 'replay'}
 end
+local outcomes = KEYS[1] .. ':outcomes'
+local kind = redis.call('TYPE', outcomes).ok
+if (kind ~= 'none' and kind ~= 'hash') or redis.call('PTTL', outcomes) >= 0 then return invalid('outcome schema') end
+local prior = redis.call('HGET', outcomes, request)
+if prior then
+  local ok, outcome = pcall(cjson.decode, prior)
+  if not ok or type(outcome) ~= 'table' or type(outcome.identifier) ~= 'string' then return invalid('outcome association') end
+  if outcome.identifier ~= identifier then return {'rejected', 'idempotency_conflict'} end
+  -- Rewriting establishes this socket's AOF offset for a replayed rejection.
+  redis.call('HSET', outcomes, request, prior)
+  if outcome.reason ~= 'already_placed' then
+    if outcome.reason ~= 'upcoming' and outcome.reason ~= 'ended' and outcome.reason ~= 'sold_out' then return invalid('outcome reason') end
+    return {'rejected', outcome.reason}
+  end
+  local record = allocation(redis.call('HGET', KEYS[2], identifier) or '')
+  if not record then return invalid('duplicate association') end
+  return {'already_placed', redis.call('HGET', KEYS[2], identifier), tostring(record.admittedAtMs), record.streamId}
+end
+local function remember(reason)
+  redis.call('HSET', outcomes, request, cjson.encode({identifier=identifier, reason=reason}))
+end
 local existing = redis.call('HGET', KEYS[2], identifier)
 if existing then
   local record = allocation(existing)
   if not record then return invalid('identifier association') end
+  remember('already_placed')
   return {'already_placed', existing, tostring(record.admittedAtMs), record.streamId}
 end
 if redis.call('HEXISTS', KEYS[4], request) == 1 then return invalid('orphan reservation') end
 local clock = redis.call('TIME')
 local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
 local window = windowRejection(starts, ends, now)
-if window then return {'rejected', window} end
-if remaining == 0 then return {'rejected', 'sold_out'} end
+if window then remember(window); return {'rejected', window} end
+if remaining == 0 then remember('sold_out'); return {'rejected', 'sold_out'} end
 -- Validate stream exhaustion before mutation (XADD * cannot advance a maximal ID).
 local last = redis.call('XREVRANGE', KEYS[5], '+', '-', 'COUNT', 1)
 if #last > 0 and last[1][1] == '18446744073709551615-18446744073709551615' then

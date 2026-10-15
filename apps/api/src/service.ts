@@ -1,3 +1,4 @@
+import { registerSaleRoutes } from './sales/routes.js';
 import { createHealthServer } from './health.js';
 import { createDatabase, listSales } from '@flash/database';
 import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, DurableAdmission, saleKey } from '@flash/redis';
@@ -41,6 +42,7 @@ export async function startService(service: 'api' | 'worker') {
     }
   };
   const app = createHealthServer(probe);
+  if (service === 'api') registerSaleRoutes(app, { database, redis, admission, probe, webOrigin: config.webOrigin });
   app.addHook('onClose', async () => { if (redis.isOpen) redis.destroy(); await database.end(); });
   try { await probe(); await app.listen({ host: config.host, port: config.port }); }
   catch { await app.close(); throw new Error(`${service} startup failed: check PostgreSQL availability, Redis persistence, and sale configuration`); }
