@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
 const suite = process.argv[2];
 if (!['integration', 'failure', 'stress'].includes(suite)) throw new Error('Expected integration, failure or stress');
@@ -14,6 +15,15 @@ if (daemon.status !== 0) {
   console.error('Docker daemon is unavailable. Start Docker before running service tests.');
   process.exit(1);
 }
+// Docker 29 reassigns ephemeral published ports on restart. Choose ports once per run.
+const listeners = await Promise.all([0, 1].map(() => new Promise((resolve, reject) => {
+  const server = createServer();
+  server.once('error', reject);
+  server.listen(0, '127.0.0.1', () => resolve(server));
+})));
+process.env.TEST_POSTGRES_PORT = String(listeners[0].address().port);
+process.env.TEST_REDIS_PORT = String(listeners[1].address().port);
+await Promise.all(listeners.map(server => new Promise(resolve => server.close(resolve))));
 try {
   docker(['up', '-d', '--wait', 'postgres', 'redis']);
   if (suite === 'stress') {

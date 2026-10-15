@@ -1,3 +1,4 @@
+import { recoveryFence } from './durability-scripts.js';
 /** Pure window decision, shared with exact-timestamp Lua tests. */
 export const admissionWindowPredicate = `
 local function windowRejection(starts, ends, now)
@@ -27,6 +28,7 @@ for i = 1, 5 do
   if kind ~= types[i] and (i == 1 or kind ~= 'none') then return invalid('key type') end
   if redis.call('PTTL', KEYS[i]) >= 0 then return invalid('expiring state') end
 end
+${recoveryFence}
 if redis.call('HGET', KEYS[1], 'admission_fault') then return invalid('operator reconciliation required') end
 local function integer(value)
   if not value or not string.match(value, '^%d+$') or (#value > 1 and string.sub(value, 1, 1) == '0') then return nil end

@@ -13,7 +13,7 @@ async function fixture(stock = 1, window: 'open' | 'upcoming' | 'ended' = 'open'
   const keys = admissionKeys(sale);
   const time = await redis.sendCommand(['TIME']) as string[];
   const now = Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000);
-  await redis.hSet(keys[0], { configuration_version: '1', starts_at: String(window === 'upcoming' ? now + 3600000 : now - 3600000),
+  await redis.hSet(keys[0], { recovered_run: (await redis.info('server')).match(/run_id:([^\r\n]+)/)![1]!, configuration_version: '1', starts_at: String(window === 'upcoming' ? now + 3600000 : now - 3600000),
     ends_at: String(window === 'ended' ? now - 1 : now + 7200000), initial_stock: String(stock), remaining_stock: String(stock) });
   return { redis, sale, keys, place: (identifier: string, idempotencyKey: string = randomUUID()) => admitPurchase(redis, sale, { identifier, idempotencyKey }) };
 }

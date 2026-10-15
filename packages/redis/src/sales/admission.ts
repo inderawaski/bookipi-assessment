@@ -15,6 +15,7 @@ export type AdmissionResult =
 export class AdmissionUncertainError extends Error {
   constructor(cause: unknown) { super('Admission outcome uncertain; reconcile before resolving', { cause }); }
 }
+/** @internal Volatile evidence only. Public placement and workers must use DurableAdmission. */
 export async function admitPurchase(redis: { sendCommand(args: string[]): Promise<unknown> }, saleId: string, input: PurchaseInput): Promise<AdmissionResult> {
   const payload = normalizePurchase(saleId, input);
   try {

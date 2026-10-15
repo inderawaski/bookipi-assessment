@@ -18,3 +18,4 @@ export async function assertRedisSafety(client: { configGet: (keys: string[]) =>
 }
 export { initializeAdmission, assertAdmissionConfiguration, saleKey } from './sales/configuration.js';
 export { admitPurchase, admissionKeys, AdmissionUncertainError, type AdmissionResult, type Reservation } from './sales/admission.js';
+export { DurableAdmission, type DurableReservation, type PersistedAdmission, type Confirmation } from './sales/durability.js';

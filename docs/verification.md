@@ -41,3 +41,36 @@ Dependency links were restored using `CI=true pnpm install --frozen-lockfile` wi
 Self-review covered explicit attempt/order separation, uncertainty versus definite rejection, Unicode and byte bounds, key conflicts and sale scope, non-revocable allocation transitions, schema/type correspondence, and stale-response handling. Review caught the printable-key regex end-anchor accepting a trailing newline; validation now rejects any non-printable character, with tests for that case.
 
 This issue introduces no live purchase/lookup routes or Redis admission implementation. Real-service outage/atomicity/durability tests remain in dependent implementation tickets. Checkpoint A examples are in [public-contract.md](public-contract.md); human approval remains pending before DEV-9.
+
+## DEV-10 durability verification
+
+Verified on 2026-10-15, macOS arm64, Node 22.23.2, pnpm 11.25.0,
+Docker Engine 29.7.2, pinned Redis 7.4.8 and PostgreSQL 18.3 containers:
+
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`: passed.
+- `pnpm test:unit`: 46 tests across 10 files passed.
+- `pnpm test:integration`: 31 tests across five files passed.
+- `pnpm test:failure`: seven tests across two files passed, including the
+  wrong-connection fsync proof and five SIGKILL/restart boundaries.
+- Barrier mutation (`reply[0] !== 1` inverted): five of ten focused tests failed;
+  restored the condition and reran the unit suite successfully.
+- `git diff --check`: passed.
+
+Review covered ownership of write/wait sockets, bounded concurrency, deadlines,
+replay/duplicate/worker confirmation, restart fencing, DB/stream association
+checks, pending-stock accounting, AOF health and conservative absence semantics.
+No unresolved correctness findings were identified in that review.
+
+The first service run exposed Docker's ephemeral host-port reassignment on
+restart (observed Redis port 57984 becoming 57989). The runner now selects ports
+once per isolated project. A later run exposed an older test's assumption that
+300 ms sufficed for everysec local fsync; it now confirms local durability before
+independently testing the absent replica's timeout. Final integration and failure
+runs above passed after these corrections; neither fix relaxes the admission
+barrier.
+
+See [the protocol and proof boundaries](admission-durability.md). HTTP response
+loss is simulated at the library boundary because public routes are a later
+issue. No power-loss, storage-loss or stress-capacity claims are made. Human
+checkpoint B remains pending review of the protocol and crash evidence before
+broader feature work.

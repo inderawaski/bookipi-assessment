@@ -27,3 +27,7 @@ No reservation TTL, automatic release, retry exhaustion revocation or inventory 
 Run `pnpm test:unit` for exact opening/closing timestamp predicates and wrapper validation, and `pnpm test:integration` for actual Redis Lua execution, two-connection contention, mixed-case duplicates, replay, schema errors, stream exhaustion and an injected partial-write failure. Test fixtures can seed timestamps directly; production has no clock override.
 
 For admission alone, run `pnpm test:integration tests/integration/admission.test.ts`. The service runner forwards file filters to Vitest while preserving disposable-service isolation.
+
+Durable acknowledgement, worker authority, and restart recovery are defined in
+[Admission durability protocol](admission-durability.md). Raw `reserved` or
+`already_placed` results must never be exposed as durable placement evidence.
