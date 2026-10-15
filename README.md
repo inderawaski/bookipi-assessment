@@ -1,6 +1,6 @@
 # Flash sale prototype
 
-DEV-6 supplies the runnable workspace and test foundation. Sale schema, admission, worker consumption, public purchase contracts and the reactive purchase page follow in DEV-7–DEV-15. The worker currently exposes dependency health and does not consume orders.
+The workspace includes the test foundation, sale configuration and shared public contracts. Admission, worker consumption, HTTP purchase routes and the reactive purchase page follow in DEV-9–DEV-15. The worker currently exposes dependency health and does not consume orders.
 
 ## Start from a fresh checkout
 
@@ -30,7 +30,7 @@ For local application development, start only dependencies with `docker compose 
 - `packages/configuration`: validated environment parsing; required URLs fail before listening.
 - `packages/database`: bounded PostgreSQL pools, connection and query timeouts.
 - `packages/redis`: named connection roles and persistence capability checks.
-- `packages/contracts`: shared health shape; purchase contracts belong to DEV-8.
+- `packages/contracts`: shared health and public sale schemas, identity normalization and state rules ([contract and checkpoint A](docs/public-contract.md)).
 - `tests/integration`, `tests/failure`, `tests/browser`, `tests/stress`: isolated service checks, failure foundation, browser smoke and k6 smoke.
 - `deploy`, `scripts`, `docs`: infrastructure, test orchestration and operational notes.
 

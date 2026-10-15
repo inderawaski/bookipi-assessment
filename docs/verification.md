@@ -26,3 +26,18 @@ Not verified on this machine:
 The source contains executable service/restart checks and documented commands for those outstanding items. No sale throughput or crash-durability assessment results are claimed by this bootstrap.
 
 Self-review covered correctness, secret handling, package boundaries, startup cleanup, test isolation, persistence settings, proxy replica resolution and bounded dependency calls. The test runner uses generated project names, standalone Compose configuration and dynamic ports; it never resets the demonstration volumes. Business behavior remains scoped to subsequent tickets.
+
+## DEV-8 contract verification
+
+Verified on 2026-10-15 with the same Node/pnpm versions:
+
+- `pnpm --config.verify-deps-before-run=false test:unit`: 31 tests across eight files, including shared contract rules and Fastify schema validation.
+- `pnpm --config.verify-deps-before-run=false typecheck`, `lint`, and `build`: passed (the same pnpm option was used for each command).
+- Opening-boundary mutation (`<=` changed to `<`): the boundary test failed as expected; restored the source and reran the full checks above successfully.
+- `git diff --check`: passed.
+
+Dependency links were restored using `CI=true pnpm install --frozen-lockfile` with registry access. The pnpm per-run dependency check was disabled for verification because sandboxed and unsandboxed pnpm invocations selected different store contexts and otherwise attempted to recreate node_modules. This option skips automatic installation, not any test/compiler/linter checks. The lockfile change adds only the internal database → contracts workspace link.
+
+Self-review covered explicit attempt/order separation, uncertainty versus definite rejection, Unicode and byte bounds, key conflicts and sale scope, non-revocable allocation transitions, schema/type correspondence, and stale-response handling. Review caught the printable-key regex end-anchor accepting a trailing newline; validation now rejects any non-printable character, with tests for that case.
+
+This issue introduces no live purchase/lookup routes or Redis admission implementation. Real-service outage/atomicity/durability tests remain in dependent implementation tickets. Checkpoint A examples are in [public-contract.md](public-contract.md); human approval remains pending before DEV-9.

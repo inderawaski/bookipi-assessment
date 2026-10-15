@@ -1,13 +1,8 @@
 import type { Pool } from 'pg';
 
 export interface SaleConfiguration { id: string; startsAt: string; endsAt: string; initialStock: number }
-export function normalizeIdentifier(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized || normalized.includes('\0') || Buffer.byteLength(normalized, 'utf8') > 1024) {
-    throw new Error('Identifier must be nonempty, contain no NUL, and fit within 1024 UTF-8 bytes');
-  }
-  return normalized;
-}
+import { normalizeIdentifier } from '@flash/contracts';
+export { normalizeIdentifier } from '@flash/contracts';
 function instant(value: string): string {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) || !Number.isFinite(Date.parse(value))) {
     throw new Error('Expected an ISO timestamp with explicit timezone and millisecond precision or less');
