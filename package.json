@@ -1,0 +1,30 @@
+{
+  "name": "flash-sale",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.23.2 <23"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm --filter './packages/**' build && pnpm -r typecheck && tsc --noEmit -p tsconfig.tests.json",
+    "lint": "eslint .",
+    "test": "pnpm test:unit",
+    "test:unit": "pnpm --filter './packages/**' build && vitest run",
+    "test:integration": "node scripts/test-services.mjs integration",
+    "test:failure": "node scripts/test-services.mjs failure",
+    "test:browser": "playwright test",
+    "test:stress": "node scripts/test-services.mjs stress",
+    "dev:web": "pnpm --filter @flash/web dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
+    "@types/node": "22.19.7",
+    "eslint": "10.11.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.4"
+  }
+}

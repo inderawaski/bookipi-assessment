@@ -1,0 +1,61 @@
+# Standalone project: never merge this with the demonstration Compose file.
+name: flash-sale-tests
+services:
+  postgres:
+    image: postgres:18.3-bookworm
+    cpus: 1.0
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: flash_test
+      POSTGRES_PASSWORD: test_only
+      POSTGRES_DB: flash_test
+    ports: ["127.0.0.1::5432"]
+    volumes: ["postgres-test-data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "flash_test", "-d", "flash_test"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:7.4.8-alpine
+    cpus: 1.0
+    mem_limit: 512m
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports: ["127.0.0.1::6379"]
+    volumes: ["redis-test-data:/data", "./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+  k6:
+    image: grafana/k6:1.6.1
+    cpus: 1.0
+    mem_limit: 512m
+    profiles: ["stress"]
+    volumes: ["./tests/stress:/scripts:ro"]
+    command: ["run", "/scripts/health.js"]
+    environment:
+      BASE_URL: http://api:3000
+    depends_on:
+      api: { condition: service_healthy }
+  api:
+    cpus: 1.0
+    mem_limit: 512m
+    profiles: ["stress"]
+    build: { context: ., target: api }
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://flash_test:test_only@postgres:5432/flash_test
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres-test-data:
+  redis-test-data:

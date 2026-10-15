@@ -1,0 +1,21 @@
+{
+  "name": "@flash/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite --host 127.0.0.1"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.4",
+    "@vitejs/plugin-react": "6.1.2",
+    "@types/react": "19.2.10",
+    "@types/react-dom": "19.2.3"
+  }
+}
