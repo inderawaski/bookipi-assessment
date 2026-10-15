@@ -1,3 +1,4 @@
+import { correlation, type Metrics } from '@flash/operations';
 import type { FastifyInstance, FastifyError } from 'fastify';
 import { normalizeIdentifier, normalizePurchase, operationalLimits, saleRoutes, saleParamsSchema, purchaseBodySchema, lookupQuerySchema, purchaseResponseSchema, lookupResponseSchema, saleResponseSchema, purchaseHttpStatus, type PurchaseInput, type PurchaseResponse, type OrderState } from '@flash/contracts';
 import { listSales, type createDatabase } from '@flash/database';
@@ -9,8 +10,20 @@ export function registerSaleRoutes(app: FastifyInstance, dependencies: {
   admission: DurableAdmission;
   probe: () => Promise<void>;
   webOrigin?: string;
+  metrics?: Metrics;
 }) {
   const { database, redis, admission, probe, webOrigin } = dependencies;
+  app.addHook('onSend', async (request, _reply, payload) => {
+    if (request.method === 'POST' && request.routeOptions.url === '/sales/:saleId/purchases' && typeof payload === 'string') {
+      const result = JSON.parse(payload) as { status?: string; reason?: string; phase?: string };
+      const reasons = ['invalid_input', 'not_found', 'upcoming', 'ended', 'sold_out', 'idempotency_conflict', 'already_placed', 'busy', 'unavailable'];
+      const outcome = result.status === 'REJECTED' && reasons.includes(result.reason ?? '') ? result.reason :
+        result.status === 'PROCESSING' && result.phase === 'confirming' ? 'uncertain' :
+        result.status === 'PROCESSING' || result.status === 'SUCCESS' ? 'admitted' : 'other';
+      dependencies.metrics?.add(`purchase_${outcome}_total`);
+    }
+    return payload;
+  });
   app.addHook('onRequest', async (request, reply) => {
     if (Buffer.byteLength(request.raw.url ?? '') > operationalLimits.requestTargetBytes) return reply.code(414).send({ status: 'REJECTED', reason: 'invalid_input' });
     if (webOrigin && request.headers.origin === webOrigin) {
@@ -78,6 +91,8 @@ export function registerSaleRoutes(app: FastifyInstance, dependencies: {
       await probe();
     } catch { return reply.code(503).send({ status: 'REJECTED', reason: 'unavailable' }); }
     let result: PurchaseResponse = await admission.place(payload.saleId, payload);
+    const outcome = result.status === 'REJECTED' ? result.reason : result.status === 'PROCESSING' && result.phase === 'confirming' ? 'uncertain' : 'admitted';
+    request.log.info({ requestKeyHash: correlation(payload.idempotencyKey), reservationHash: correlation(payload.saleId + ':' + payload.identifier), outcome }, 'Purchase admission');
     if (result.status === 'PROCESSING' || (result.status === 'REJECTED' && result.reason === 'already_placed')) {
       try {
         const order = await allocated(payload.saleId, payload.identifier);

@@ -13,6 +13,7 @@
     "@flash/configuration": "workspace:*",
     "@flash/database": "workspace:*",
     "@flash/redis": "workspace:*",
-    "@flash/contracts": "workspace:*"
+    "@flash/contracts": "workspace:*",
+    "@flash/operations": "workspace:*"
   }
 }

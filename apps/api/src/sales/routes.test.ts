@@ -1,3 +1,4 @@
+import { Metrics } from '@flash/operations';
 import type { PurchaseResponse } from '@flash/contracts';
 import type { Confirmation } from '@flash/redis';
 import { it, expect, vi } from 'vitest';
@@ -11,8 +12,9 @@ function fixture() {
   const lookup = vi.fn(async (): Promise<Confirmation> => ({ status: 'confirming', diagnostic: 'missing_without_absence_proof' }));
   const hGet = vi.fn(async () => '2');
   const app = createHealthServer(probe);
-  registerSaleRoutes(app, { database: { query }, redis: { hGet, hExists: async () => 0 }, admission: { place, lookup }, probe, webOrigin: 'http://localhost:8080' } as unknown as Parameters<typeof registerSaleRoutes>[1]);
-  return { app, query, probe, place, lookup, hGet };
+  const metrics = new Metrics();
+  registerSaleRoutes(app, { database: { query }, redis: { hGet, hExists: async () => 0 }, admission: { place, lookup }, probe, metrics, webOrigin: 'http://localhost:8080' } as unknown as Parameters<typeof registerSaleRoutes>[1]);
+  return { app, query, probe, place, lookup, hGet, metrics };
 }
 it('serves status, encoded generic identities, strict validation, CORS and size bounds', async () => {
   const { app, place } = fixture();
@@ -61,5 +63,19 @@ it('preserves every admission rejection, uncertain result and duplicate state', 
     expect((await submit()).json()).toEqual(duplicate);
     place.mockResolvedValue({ status: 'PROCESSING', phase: 'confirming' });
     expect((await submit()).json()).toEqual({ status: 'PROCESSING', phase: 'confirming' });
+  } finally { await app.close(); }
+});
+
+it('accounts fixed purchase outcomes without identifier labels', async () => {
+  const { app, place, metrics } = fixture();
+  try {
+    const outcomes: PurchaseResponse[] = [{ status: 'PROCESSING', phase: 'queued' }, { status: 'PROCESSING', phase: 'confirming' }, { status: 'REJECTED', reason: 'sold_out' }, { status: 'REJECTED', reason: 'invalid_input' }];
+    for (const outcome of outcomes) {
+      place.mockResolvedValue(outcome);
+      await app.inject({ method: 'POST', url: '/sales/sale/purchases', payload: { identifier: 'private-identifier', idempotencyKey: 'key' } });
+    }
+    const result = metrics.render();
+    for (const name of ['admitted', 'uncertain', 'sold_out', 'invalid_input']) expect(result).toContain(`flash_purchase_${name}_total 1\n`);
+    expect(result).not.toContain('private-identifier');
   } finally { await app.close(); }
 });

@@ -17,7 +17,8 @@ type Connection = ReturnType<typeof createRedisConnection>;
 /** One operation per socket, bounded concurrency, no waiting queue or automatic replay. */
 export class DurableAdmission {
   private active = 0;
-  constructor(private readonly url: string, private readonly concurrency = 16, private readonly timeoutMs = 3000) {
+  constructor(private readonly url: string, private readonly concurrency = 16, private readonly timeoutMs = 3000,
+    private readonly observeBarrier: (seconds: number) => void = () => {}) {
     if (!Number.isSafeInteger(concurrency) || concurrency < 1 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Invalid durability limits');
   }
   private async own<T>(operation: (redis: Connection) => Promise<T>): Promise<T> {
@@ -43,7 +44,10 @@ export class DurableAdmission {
     }
   }
   private async barrier(redis: Connection) {
-    const reply = await redis.sendCommand(['WAITAOF', '1', '0', String(this.timeoutMs)]);
+    const started = performance.now();
+    let reply: unknown;
+    try { reply = await redis.sendCommand(['WAITAOF', '1', '0', String(this.timeoutMs)]); }
+    finally { this.observeBarrier((performance.now() - started) / 1000); }
     if (!Array.isArray(reply) || reply[0] !== 1) throw new Error('Local AOF durability unconfirmed');
   }
   private async confirm(redis: Connection, saleId: string, identifier: string): Promise<Confirmation> {

@@ -1,3 +1,4 @@
+import { correlation, type Metrics } from '@flash/operations';
 import { randomUUID } from 'node:crypto';
 import { persistOrder, OrderConflictError, type createDatabase } from '@flash/database';
 import { admissionKeys, createRedisConnection, DurableAdmission, saleKey, finishAttempt, claimAttempt, delayAttempt, defaultRetryPolicy, type RetryPolicy } from '@flash/redis';
@@ -30,6 +31,7 @@ export async function processOrder(database: ReturnType<typeof createDatabase>, 
     // Both operations may repeat after a crash; neither removes the stream entry.
     await redis.hSet(`${saleKey(saleId)}:completed`, fields.identifier, orderId);
     await redis.xAck(admissionKeys(saleId)[4], orderGroup, entry.id);
+    return orderId;
   } catch (error) {
     if (!(error instanceof OrderConflictError)) throw error;
     // Retain pending work and its raw stream data for operator investigation.
@@ -38,7 +40,7 @@ export async function processOrder(database: ReturnType<typeof createDatabase>, 
 }
 
 export async function createOrderConsumer(url: string, database: ReturnType<typeof createDatabase>,
-  admission: DurableAdmission, sales: () => Promise<string[]>, report: (error: unknown) => void, policy: RetryPolicy = defaultRetryPolicy) {
+  admission: DurableAdmission, sales: () => Promise<string[]>, report: (error: unknown) => void, policy: RetryPolicy = defaultRetryPolicy, metrics?: Metrics) {
   const blocking = createRedisConnection(url, 'blocking-consumer');
   const commands = createRedisConnection(url, 'commands');
   try { await Promise.all([blocking.connect(), commands.connect()]); }
@@ -57,13 +59,19 @@ export async function createOrderConsumer(url: string, database: ReturnType<type
     }
     const attempt = await claimAttempt(commands, saleId, entry.id, policy);
     if (!attempt) return;
+    metrics?.add('worker_attempts_total');
     try {
-      await processOrder(database, commands, admission, saleId, entry);
+      const orderId = await processOrder(database, commands, admission, saleId, entry);
       if (await commands.hExists(`${saleKey(saleId)}:quarantine`, entry.id)) {
         await commands.zRem(`${saleKey(saleId)}:retry_due`, entry.id);
-      } else await finishAttempt(commands, saleId, entry.id, attempt);
+      } else {
+        await finishAttempt(commands, saleId, entry.id, attempt);
+        if (orderId) metrics?.add('database_completion_total');
+        console.info({ orderId, requestKeyHash: correlation(entry.message.request_key ?? ''), reservationHash: correlation(saleId + ':' + entry.message.identifier) }, 'Order completed');
+      }
     }
     catch {
+      metrics?.add('worker_retries_total');
       await delayAttempt(commands, saleId, entry.id, attempt, policy);
       report(new Error('Order delayed; allocation retained'));
     }

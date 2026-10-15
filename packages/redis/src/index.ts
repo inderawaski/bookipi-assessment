@@ -2,7 +2,7 @@ import { createClient } from 'redis';
 export type RedisRole = 'commands' | 'blocking-consumer' | 'durability';
 // Each call owns a distinct socket. Never share blocking or durability sockets across operations.
 export function createRedisConnection(url: string, role: RedisRole, timeoutMs = 2000) {
-  const client = createClient({ url, name: role, disableOfflineQueue: true,
+  const client = createClient({ url, name: role, disableOfflineQueue: true, commandsQueueMaxLength: 256,
     commandOptions: role === 'commands' ? { timeout: timeoutMs } : undefined,
     socket: { connectTimeout: timeoutMs, reconnectStrategy: false } });
   client.on('error', () => { /* Readiness/operation callers handle failures; do not log credentials. */ });

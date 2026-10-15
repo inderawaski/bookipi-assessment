@@ -128,3 +128,5 @@ transaction rollback, uncertain commit replies, and failures between commit,
 completion publication, and acknowledgement.
 
 Retry configuration, operator inspection/replay, reconciliation and checkpoint C: [Recovery runbook](docs/recovery.md).
+
+Operational limits, replica scaling and metric semantics: [operations guide](docs/operations.md).

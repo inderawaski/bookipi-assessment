@@ -41,6 +41,9 @@ importers:
       '@flash/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@flash/operations':
+        specifier: workspace:*
+        version: link:../../packages/operations
       '@flash/redis':
         specifier: workspace:*
         version: link:../../packages/redis
@@ -81,6 +84,9 @@ importers:
       '@flash/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@flash/operations':
+        specifier: workspace:*
+        version: link:../../packages/operations
       '@flash/redis':
         specifier: workspace:*
         version: link:../../packages/redis
@@ -104,6 +110,12 @@ importers:
       '@types/pg':
         specifier: 8.16.0
         version: 8.16.0
+
+  packages/operations:
+    dependencies:
+      fastify:
+        specifier: 5.12.7
+        version: 5.12.7
 
   packages/redis:
     dependencies:
