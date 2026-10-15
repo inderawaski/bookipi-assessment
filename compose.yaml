@@ -60,6 +60,9 @@ services:
     environment:
       <<: *environment
       WORKER_PORT: 3001
+      ORDER_MAX_ATTEMPTS: ${ORDER_MAX_ATTEMPTS:-5}
+      ORDER_RETRY_BASE_MS: ${ORDER_RETRY_BASE_MS:-1000}
+      ORDER_RETRY_MAX_MS: ${ORDER_RETRY_MAX_MS:-60000}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s

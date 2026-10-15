@@ -1,13 +1,13 @@
 import { normalizeIdentifier, normalizePurchase, type PurchaseInput, type PurchaseResponse } from '@flash/contracts';
 import { createRedisConnection, assertRedisSafety } from '../index.js';
 import { admitPurchase, admissionKeys, type Reservation } from './admission.js';
-import { assertAdmissionConfiguration, type AdmissionConfiguration } from './configuration.js';
+import { saleKey, assertAdmissionConfiguration, type AdmissionConfiguration } from './configuration.js';
 import { confirmationScript, recoveryScript } from './durability-scripts.js';
 
 const durable = Symbol('durable admission');
 /** Only a successful durability confirmation can issue this evidence. Never persist this process-local token. */
 export type DurableReservation = Reservation & { readonly [durable]: true };
-export interface PersistedAdmission { identifier: string; admittedAtMs: number }
+export interface PersistedAdmission { orderId?: string; identifier: string; admittedAtMs: number }
 export type Confirmation =
   | { status: 'durable'; reservation: DurableReservation }
   | { status: 'confirming'; diagnostic: 'missing_without_absence_proof' | 'durability_unavailable' };
@@ -87,6 +87,7 @@ export class DurableAdmission {
   /** Supply the complete DB order snapshot for this sale; mismatch keeps the restart fence closed. */
   async recover(sale: AdmissionConfiguration, orders: PersistedAdmission[]): Promise<void> {
     await this.own(async redis => {
+      await redis.hDel(saleKey(sale.id), 'recovered_run');
       await assertAdmissionConfiguration(redis, sale);
       const run = (await redis.info('server')).match(/run_id:([^\r\n]+)/)?.[1];
       if (!run) throw new Error('Missing Redis run ID');

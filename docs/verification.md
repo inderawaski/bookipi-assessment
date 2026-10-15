@@ -74,3 +74,34 @@ loss is simulated at the library boundary because public routes are a later
 issue. No power-loss, storage-loss or stress-capacity claims are made. Human
 checkpoint B remains pending review of the protocol and crash evidence before
 broader feature work.
+
+## DEV-12 retry and recovery verification
+
+Verified on 2026-10-15 with the same Node/pnpm and pinned service versions:
+
+- `pnpm test:unit`: 51 tests across 13 files passed.
+- `pnpm test:integration`: 34 tests across seven files passed.
+- `pnpm test:failure`: seven tests across two files passed.
+- `pnpm typecheck`, `pnpm build`, `pnpm lint`, `git diff --check`, and
+  `node --check scripts/recovery.mjs`: passed.
+- Retry ceiling mutation (`Math.min` to `Math.max`) failed the jitter test;
+  restored the source and reran successfully.
+
+New real-service coverage exercises durable finite budgets, PostgreSQL outage,
+worker consumer restart, repeated replay, one resulting order, retained stock,
+missing stream repair, completion repair, partial reconciliation followed by
+safe resumption, and fencing on unknown schema. Existing crash/AOF tests still pass.
+The outdated missing-stream rejection assertion was changed to require repair.
+The first replay polling check incorrectly included a side effect and a timeout
+shorter than an AOF sync; final tests poll only read-only readiness before replay.
+
+Self-review covered atomic attempt claiming, replay eligibility, lost replies,
+metadata transfer when replacing missing stream entries, reconnect behavior,
+configuration safety, startup fences, and sanitized service logs. A database
+sale-list dependency was removed from the worker processing loop so a database
+outage can actually consume and exhaust the configured retry budget.
+
+No browser or stress run was needed for this backend recovery change. Human
+checkpoint C remains pending; follow [the recovery runbook](recovery.md).
+Startup reconciliation scans retained sale state atomically and can delay readiness
+for large sales; no new throughput or storage-loss guarantees are claimed.

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { persistOrder, OrderConflictError, type createDatabase } from '@flash/database';
-import { admissionKeys, createRedisConnection, DurableAdmission, saleKey } from '@flash/redis';
+import { admissionKeys, createRedisConnection, DurableAdmission, saleKey, finishAttempt, claimAttempt, delayAttempt, defaultRetryPolicy, type RetryPolicy } from '@flash/redis';
 
 export const orderGroup = 'orders';
 // Far above the 3s durability deadline and bounded DB statements. Correctness still relies
@@ -38,7 +38,7 @@ export async function processOrder(database: ReturnType<typeof createDatabase>, 
 }
 
 export async function createOrderConsumer(url: string, database: ReturnType<typeof createDatabase>,
-  admission: DurableAdmission, sales: () => Promise<string[]>, report: (error: unknown) => void) {
+  admission: DurableAdmission, sales: () => Promise<string[]>, report: (error: unknown) => void, policy: RetryPolicy = defaultRetryPolicy) {
   const blocking = createRedisConnection(url, 'blocking-consumer');
   const commands = createRedisConnection(url, 'commands');
   try { await Promise.all([blocking.connect(), commands.connect()]); }
@@ -50,9 +50,29 @@ export async function createOrderConsumer(url: string, database: ReturnType<type
   let stopped = false;
   const consumer = randomUUID();
   const cursors = new Map<string, string>();
+  const handle = async (saleId: string, entry: StreamOrder) => {
+    if (await commands.hExists(`${saleKey(saleId)}:quarantine`, entry.id)) {
+      await commands.zRem(`${saleKey(saleId)}:retry_due`, entry.id);
+      return;
+    }
+    const attempt = await claimAttempt(commands, saleId, entry.id, policy);
+    if (!attempt) return;
+    try {
+      await processOrder(database, commands, admission, saleId, entry);
+      if (await commands.hExists(`${saleKey(saleId)}:quarantine`, entry.id)) {
+        await commands.zRem(`${saleKey(saleId)}:retry_due`, entry.id);
+      } else await finishAttempt(commands, saleId, entry.id, attempt);
+    }
+    catch {
+      await delayAttempt(commands, saleId, entry.id, attempt, policy);
+      report(new Error('Order delayed; allocation retained'));
+    }
+  };
   const run = (async () => {
     while (!stopped) {
       try {
+        if (!commands.isReady) await commands.connect();
+        if (!blocking.isReady) await blocking.connect();
         const ids = await sales();
         if (!ids.length) { await new Promise(resolve => setTimeout(resolve, 250)); continue; }
         for (const saleId of ids) {
@@ -61,12 +81,21 @@ export async function createOrderConsumer(url: string, database: ReturnType<type
           catch (error) { if (!(error instanceof Error) || !error.message.includes('BUSYGROUP')) throw error; }
           const claimed = await commands.xAutoClaim(stream, orderGroup, consumer, reclaimIdleMs, cursors.get(saleId) ?? '0-0', { COUNT: 10 });
           cursors.set(saleId, claimed.nextId);
-          for (const entry of claimed.messages) if (entry) await processOrder(database, commands, admission, saleId, entry);
+          for (const entry of claimed.messages) if (entry) await handle(saleId, entry);
+          const clock = await commands.sendCommand(['TIME']) as string[];
+          const now = Number(clock[0]) * 1000 + Math.floor(Number(clock[1]) / 1000);
+          const due = await commands.zRangeByScore(`${saleKey(saleId)}:retry_due`, 0, now, { LIMIT: { offset: 0, count: 10 } });
+          for (const id of due) {
+            const entries = await commands.xRange(stream, id, id);
+            if (entries?.[0]) await handle(saleId, entries[0]);
+            const raw = await commands.hGet(`${saleKey(saleId)}:retries`, id);
+            if (raw && JSON.parse(raw).exhausted) await commands.zRem(`${saleKey(saleId)}:retry_due`, id);
+          }
           const batches = await blocking.xReadGroup(orderGroup, consumer, { key: stream, id: '>' }, { COUNT: 10, BLOCK: 250 });
-          for (const batch of batches ?? []) for (const entry of batch.messages) await processOrder(database, commands, admission, saleId, entry);
+          for (const batch of batches ?? []) for (const entry of batch.messages) await handle(saleId, entry);
         }
       } catch (error) {
-        if (!stopped) { report(error); await new Promise(resolve => setTimeout(resolve, 250)); }
+        if (!stopped) { report(error); await new Promise(resolve => setTimeout(resolve, 1000 + Math.floor(Math.random() * 1000))); }
       }
     }
   })();

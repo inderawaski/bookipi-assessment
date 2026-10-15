@@ -66,7 +66,9 @@ it('recovery preserves pending stock and refuses mismatched DB orders or queue d
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('confirming');
     await f.gate.recover(f.sale, []);
     await f.redis.del(f.keys[4]);
-    await expect(f.gate.recover(f.sale, [])).rejects.toThrow('invalid accounting');
+    await f.gate.recover(f.sale, []);
+    expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('durable');
+    expect(await f.redis.xLen(f.keys[4])).toBe(1);
   } finally { f.redis.destroy(); }
 });
 it('validates matching DB orders and refuses expiring allocation state', async () => {

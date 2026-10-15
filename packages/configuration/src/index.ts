@@ -22,6 +22,11 @@ export function parseConfiguration(env: Environment, service: 'api' | 'worker') 
     databaseUrl: endpoint(env, 'DATABASE_URL', ['postgres:', 'postgresql:']),
     redisUrl: endpoint(env, 'REDIS_URL', ['redis:', 'rediss:']),
     databasePoolSize: integer(env, 'DATABASE_POOL_SIZE', 10, 100),
+    retryPolicy: {
+      maxAttempts: integer(env, 'ORDER_MAX_ATTEMPTS', 5, 100),
+      baseMs: integer(env, 'ORDER_RETRY_BASE_MS', 1000, 60000),
+      maxMs: integer(env, 'ORDER_RETRY_MAX_MS', 60000, 3600000),
+    },
     dependencyTimeoutMs: integer(env, 'DEPENDENCY_TIMEOUT_MS', 2000, 30000),
   };
 }

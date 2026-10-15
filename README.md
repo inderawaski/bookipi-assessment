@@ -126,3 +126,5 @@ Run `pnpm test:integration -- tests/integration/orders.test.ts` with Docker runn
 for real PostgreSQL/Redis concurrent-delivery evidence. Unit tests exercise
 transaction rollback, uncertain commit replies, and failures between commit,
 completion publication, and acknowledgement.
+
+Retry configuration, operator inspection/replay, reconciliation and checkpoint C: [Recovery runbook](docs/recovery.md).
