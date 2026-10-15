@@ -33,3 +33,7 @@ No external caller may clear fences, trim streams, expire allocation keys or cal
 - `pnpm test:failure`: real fsync suppression and wrong-connection regression; SIGKILL before Lua, after Lua, during a verified blocked WAITAOF, after confirmation before a simulated HTTP response, and following AOF rewrite. Restart must fence first; acknowledged work must remain discoverable; unacknowledged work may be present or missing but never guessed rejected.
 
 The failure tests stop actual Redis processes; transport-boundary unit tests model API socket loss. HTTP routes are not present yet, so HTTP loss is simulated at the library boundary. An OS-process kill does not simulate power loss or a lying storage device. Broader network/load failures remain DEV-17 work. Checkpoint B requires human inspection of this protocol and test output before broader feature work; implementation does not record human approval on the reviewer's behalf.
+
+DEV-17 adds process failpoints, real TCP reply loss/partition, unknown PostgreSQL
+commit results, worker crash/replay and retained evidence. The current coverage and
+human checkpoint E instructions are in [the failure matrix](failure-matrix.md).

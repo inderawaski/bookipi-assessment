@@ -75,14 +75,11 @@ it.each(['before_lua', 'after_lua', 'during_wait', 'after_confirmation', 'rewrit
       expect(await f.gate.place(f.sale.id, { identifier: 'person', idempotencyKey: 'key' })).toEqual({ status: 'PROCESSING', phase: 'queued' });
     }
     if (boundary === 'rewrite') {
+      // Redis test knob slows each RDB-preamble key so rewrite spans the kill.
+      await f.redis.configSet('rdb-key-save-delay', '100000');
       await f.redis.sendCommand(['BGREWRITEAOF']);
-      let finished = false;
-      for (let i = 0; i < 100; i++) {
-        const info = await f.redis.info('persistence');
-        if (info.includes('aof_rewrite_in_progress:0') && info.includes('aof_last_bgrewrite_status:ok')) { finished = true; break; }
-        await setTimeout(20);
-      }
-      expect(finished).toBe(true);
+      // Kill while rewrite is in progress, not after its completion.
+      expect((await f.redis.info('persistence')).includes('aof_rewrite_in_progress:1')).toBe(true);
     }
     docker('kill', '-s', 'SIGKILL', 'redis');
     if (pending) await pending;

@@ -11,7 +11,9 @@ type Connection = ReturnType<typeof createRedisConnection>;
 export interface StreamOrder { id: string; message: Record<string, string> }
 
 export async function processOrder(database: ReturnType<typeof createDatabase>, redis: Connection,
-  admission: DurableAdmission, saleId: string, entry: StreamOrder) {
+  admission: DurableAdmission, saleId: string, entry: StreamOrder, failpoint?: (boundary: string) => Promise<void>) {
+  if (failpoint && process.env.NODE_ENV !== 'test') throw new Error('Failpoints require test mode');
+  await failpoint?.('receipt');
   const fields = entry.message;
   const quarantine = `${saleKey(saleId)}:quarantine`;
   if (await redis.hExists(quarantine, entry.id)) return;
@@ -22,15 +24,19 @@ export async function processOrder(database: ReturnType<typeof createDatabase>, 
     }
     const confirmation = await admission.lookup(saleId, fields.identifier);
     if (confirmation.status !== 'durable') throw new Error('Admission durability unavailable');
+    await failpoint?.('after_durability');
     const reservation = confirmation.reservation;
     if (reservation.requestKey !== fields.request_key || reservation.streamId !== entry.id) {
       throw new OrderConflictError('Conflicting admission identity');
     }
     if (reservation.admittedAtMs !== Number(fields.admitted_at_ms)) throw new OrderConflictError('Conflicting admission timestamp');
-    const orderId = await persistOrder(database, { saleId, identifier: fields.identifier, admittedAtMs: reservation.admittedAtMs });
+    const orderId = await persistOrder(database, { saleId, identifier: fields.identifier, admittedAtMs: reservation.admittedAtMs }, failpoint);
     // Both operations may repeat after a crash; neither removes the stream entry.
+    await failpoint?.('before_status');
     await redis.hSet(`${saleKey(saleId)}:completed`, fields.identifier, orderId);
+    await failpoint?.('after_status');
     await redis.xAck(admissionKeys(saleId)[4], orderGroup, entry.id);
+    await failpoint?.('after_ack');
     return orderId;
   } catch (error) {
     if (!(error instanceof OrderConflictError)) throw error;

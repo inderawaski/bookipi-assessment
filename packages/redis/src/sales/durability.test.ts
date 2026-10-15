@@ -93,3 +93,10 @@ it.each([true, false])('confirms rejection outcome durability before returning i
     ? { status: 'REJECTED', reason: 'upcoming' } : { status: 'PROCESSING', phase: 'confirming' });
   expect(client.sendCommand.mock.calls.at(-1)?.[0]?.[0]).toBe('WAITAOF');
 });
+
+it('refuses injected failpoints outside test mode', () => {
+  vi.stubEnv('NODE_ENV', 'production');
+  try {
+    expect(() => new DurableAdmission('redis://unused', 1, 100, () => {}, async () => {})).toThrow('test mode');
+  } finally { vi.unstubAllEnvs(); }
+});

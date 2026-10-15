@@ -39,7 +39,8 @@ not admission-path work; large sales can delay readiness while the atomic scan r
 
 `configure` is idempotent and rejects conflicting configuration. There is no production
 reset command. The service test runner generates an isolated `flash-test-UUID` project
-and a `flash_test` database; volume removal applies only to that disposable project.
+and a `flash_test` database. Integration runs remove their disposable volumes; failure
+runs retain volumes and evidence for inspection. See [the failure matrix](failure-matrix.md).
 
 Human checkpoint C (requires a person; not recorded as completed): configure a sale,
 reserve one unit, stop the worker, restart it and confirm exactly one order. Repeat

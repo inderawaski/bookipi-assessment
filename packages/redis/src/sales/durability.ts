@@ -18,7 +18,9 @@ type Connection = ReturnType<typeof createRedisConnection>;
 export class DurableAdmission {
   private active = 0;
   constructor(private readonly url: string, private readonly concurrency = 16, private readonly timeoutMs = 3000,
-    private readonly observeBarrier: (seconds: number) => void = () => {}) {
+    private readonly observeBarrier: (seconds: number) => void = () => {},
+    private readonly failpoint?: (boundary: string) => Promise<void>) {
+    if (failpoint && process.env.NODE_ENV !== 'test') throw new Error('Failpoints require test mode');
     if (!Number.isSafeInteger(concurrency) || concurrency < 1 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Invalid durability limits');
   }
   private async own<T>(operation: (redis: Connection) => Promise<T>): Promise<T> {
@@ -57,14 +59,18 @@ export class DurableAdmission {
     const [requestKey, timestamp, streamId] = reply;
     if (typeof requestKey !== 'string' || typeof timestamp !== 'string' || !/^\d+$/.test(timestamp) ||
         !Number.isSafeInteger(Number(timestamp)) || typeof streamId !== 'string' || !/^\d+-\d+$/.test(streamId)) throw new Error('Invalid reservation');
+    await this.failpoint?.('before_durability');
     await this.barrier(redis);
+    await this.failpoint?.('after_durability');
     return { status: 'durable', reservation: { requestKey, admittedAtMs: Number(timestamp), streamId, [durable]: true } };
   }
   async place(saleId: string, input: PurchaseInput): Promise<PurchaseResponse> {
     const payload = normalizePurchase(saleId, input);
     try {
       return await this.own(async redis => {
+        await this.failpoint?.('before_send');
         const result = await admitPurchase(redis, payload.saleId, payload);
+        await this.failpoint?.('after_send');
         if (result.status === 'rejected') {
           await this.barrier(redis);
           return { status: 'REJECTED', reason: result.reason };

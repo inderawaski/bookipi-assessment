@@ -4,11 +4,14 @@ import type { Pool } from 'pg';
 export interface OrderAdmission { saleId: string; identifier: string; admittedAtMs: number }
 export class OrderConflictError extends Error {}
 /** Unique constraints serialize concurrent deliveries. A lost COMMIT reply is retried by lookup. */
-export async function persistOrder(database: Pool, admission: OrderAdmission): Promise<string> {
+export async function persistOrder(database: Pool, admission: OrderAdmission, failpoint?: (boundary: string) => Promise<void>): Promise<string> {
+  if (failpoint && process.env.NODE_ENV !== 'test') throw new Error('Failpoints require test mode');
   const client = await database.connect();
   let failed = false;
   try {
+    await failpoint?.('before_transaction');
     await client.query('BEGIN');
+    await failpoint?.('after_begin');
     await client.query(`INSERT INTO "order" (id, flash_sale_id, user_identifier, admitted_at, completed_at)
       VALUES ($1, $2, $3, to_timestamp($4::double precision / 1000), greatest(clock_timestamp(), to_timestamp($4::double precision / 1000)))
       ON CONFLICT (flash_sale_id, user_identifier) DO NOTHING`,
@@ -18,7 +21,9 @@ export async function persistOrder(database: Pool, admission: OrderAdmission): P
        WHERE flash_sale_id = $1 AND user_identifier = $2`, [admission.saleId, admission.identifier]);
     const order = result.rows[0];
     if (!order || Number(order.timestamp) !== admission.admittedAtMs) throw new OrderConflictError('Conflicting durable order metadata');
+    await failpoint?.('before_commit');
     await client.query('COMMIT');
+    await failpoint?.('after_commit');
     return order.id;
   } catch (error) {
     failed = true;

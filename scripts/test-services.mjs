@@ -1,9 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
 const suite = process.argv[2];
 if (!['integration', 'failure', 'stress'].includes(suite)) throw new Error('Expected integration, failure or stress');
 const project = `flash-test-${randomUUID()}`;
+const evidence = `test-results/failure/${project}`;
+if (suite === 'failure') mkdirSync(evidence, { recursive: true });
 const args = ['compose', '-f', 'compose.test.yaml', '-p', project];
 function docker(tail, capture = false) {
   const result = spawnSync('docker', [...args, ...tail], { encoding: 'utf8', stdio: capture ? 'pipe' : 'inherit' });
@@ -26,7 +29,7 @@ process.env.TEST_REDIS_PORT = String(listeners[1].address().port);
 await Promise.all(listeners.map(server => new Promise(resolve => server.close(resolve))));
 try {
   if (suite !== 'stress') {
-    const build = spawnSync('pnpm', ['--filter', './packages/**', 'build'], { stdio: 'inherit' });
+    const build = spawnSync('pnpm', suite === 'failure' ? ['-r', 'build'] : ['--filter', './packages/**', 'build'], { stdio: 'inherit' });
     if (build.status !== 0) throw new Error('Workspace package build failed');
   }
   docker(['up', '-d', '--wait', 'postgres', 'redis']);
@@ -35,7 +38,7 @@ try {
   } else {
     const pg = docker(['port', 'postgres', '5432'], true).split(':').at(-1);
     const redis = docker(['port', 'redis', '6379'], true).split(':').at(-1);
-    const result = spawnSync('pnpm', ['exec', 'vitest', 'run', '--config', 'vitest.services.config.ts', ...process.argv.slice(3)], {
+    const result = spawnSync('pnpm', ['exec', 'vitest', 'run', '--config', 'vitest.services.config.ts', ...(suite === 'failure' ? ['--reporter=default', '--reporter=json', `--outputFile=${evidence}/results.json`] : []), ...process.argv.slice(3)], {
       stdio: 'inherit', env: { ...process.env, NODE_ENV: 'test', TEST_SUITE: suite, TEST_PROJECT: project,
         TEST_DATABASE_URL: `postgresql://flash_test:test_only@127.0.0.1:${pg}/flash_test`, TEST_REDIS_URL: `redis://127.0.0.1:${redis}` },
     });
@@ -46,6 +49,10 @@ try {
   process.exitCode = 1;
 } finally {
   // Only the randomly generated project owned by this invocation can be removed.
-  try { docker(['down', '--volumes', '--remove-orphans']); }
+  try {
+    if (suite === 'failure') writeFileSync(`${evidence}/services.log`, docker(['logs', '--no-color'], true) ?? '');
+    docker(['down', ...(suite === 'failure' ? [] : ['--volumes']), '--remove-orphans']);
+    if (suite === 'failure') console.info(`Retained recovery volumes for ${project}`);
+  }
   catch { console.error(`Cleanup failed for isolated project ${project}`); process.exitCode = 1; }
 }

@@ -32,3 +32,15 @@ it('does not publish or acknowledge before a successful commit; completion and a
     expect(status).toHaveBeenLastCalledWith(expect.stringContaining(':completed'), 'person', 'order');
   } finally { await database.end(); vi.restoreAllMocks(); }
 });
+
+it('refuses worker failpoints outside test mode', async () => {
+  const database = createDatabase('postgresql://unused', 1, 100);
+  const redis = createRedisConnection('redis://unused', 'commands');
+  const gate = new DurableAdmission('redis://unused');
+  vi.stubEnv('NODE_ENV', 'production');
+  try {
+    const hook = vi.fn(async () => {});
+    await expect(processOrder(database, redis, gate, 'sale', { id: '1-0', message: {} }, hook)).rejects.toThrow('test mode');
+    expect(hook).not.toHaveBeenCalled();
+  } finally { vi.unstubAllEnvs(); await database.end(); }
+});
