@@ -31,7 +31,7 @@ For local application development, start only dependencies with `docker compose 
 - `packages/database`: bounded PostgreSQL pools, connection and query timeouts.
 - `packages/redis`: named connection roles and persistence capability checks.
 - `packages/contracts`: shared health and public sale schemas, identity normalization and state rules ([contract and checkpoint A](docs/public-contract.md)).
-- `tests/integration`, `tests/failure`, `tests/browser`, `tests/stress`: isolated service checks, failure foundation, browser smoke and k6 smoke.
+- `tests/integration`, `tests/failure`, `tests/browser`, `tests/stress`: isolated service checks, failure foundation, browser smoke and the legacy k6 readiness smoke. `scripts/stress` owns the one-second burst harness.
 - `deploy`, `scripts`, `docs`: infrastructure, test orchestration and operational notes.
 
 There are no business domains yet. Subsequent sale code should be grouped by capability inside these boundaries. The two backend entry points intentionally have a small amount of identical lifecycle glue so neither application imports the other.
@@ -95,7 +95,7 @@ pnpm test:stress
 
 Service tests use a standalone Compose file, random project names, dynamic localhost ports, a dedicated `flash_test` database and their own volumes. The runner passes only its discovered endpoints, and cleans up only its generated project. It never reads `DATABASE_URL`/`REDIS_URL` for test data or calls FLUSHALL/TRUNCATE on demonstration services. Tests refuse invocation without the runner's isolation marker. Browser tests start their own Vite server and refuse to reuse an existing one. Unit tests need no running services; their command builds the shared packages first.
 
-Test services and the k6 generator each have a 1 CPU / 512 MiB limit. The k6 script is a readiness smoke check, not evidence of a one-second sale burst or throughput. The [DEV-16 coverage matrix](docs/integration-coverage.md) maps business invariants to executable tests. DEV-17–DEV-19 add deterministic crash boundaries and measured load evidence. Docker Desktop storage and its VM filesystem can have substantially different AOF/fsync latency from bare-metal Linux: record host/VM resources, storage, achieved dispatch, response latency and drain time when benchmarking.
+Stress service containers each have a 1 CPU / 512 MiB limit. `pnpm test:stress` runs the five prescribed sale bursts plus separate new-key duplicate and same-key retry cases using a host Node generator with preconnected sockets. See the [harness guide](scripts/stress/README.md) for dispatch validation, capacity reruns, artifacts, and isolated cleanup. Use `pnpm test:stress stock100-1k` for the smallest case and `pnpm test:harness` for accounting and real socket timing tests. The legacy k6 script remains a readiness smoke check. The [DEV-16 coverage matrix](docs/integration-coverage.md) maps business invariants to executable tests. DEV-17 adds deterministic crash boundaries; DEV-19 executes the full scaling and load experiments. Docker Desktop storage and its VM filesystem can have substantially different AOF/fsync latency from bare-metal Linux: record host/VM resources, storage, achieved dispatch, response latency and drain time when benchmarking.
 
 See [docs/framework-guides.md](docs/framework-guides.md) for the official guides consulted and [docs/verification.md](docs/verification.md) for the current verification record.
 

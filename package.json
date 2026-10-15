@@ -10,15 +10,16 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter './packages/**' build && pnpm -r typecheck && tsc --noEmit -p tsconfig.tests.json",
     "lint": "eslint .",
-    "test": "pnpm test:unit",
+    "test": "pnpm test:unit && pnpm test:harness",
     "test:unit": "pnpm --filter './packages/**' build && vitest run",
     "test:integration": "node scripts/test-services.mjs integration",
     "test:failure": "node scripts/test-services.mjs failure",
     "test:browser": "playwright test",
-    "test:stress": "node scripts/test-services.mjs stress",
+    "test:stress": "node scripts/stress.mjs",
     "dev:web": "pnpm --filter @flash/web dev",
     "db:migrate": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs migrate",
-    "sale:configure": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs configure"
+    "sale:configure": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs configure",
+    "test:harness": "node --test scripts/stress/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
