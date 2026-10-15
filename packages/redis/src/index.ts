@@ -17,3 +17,4 @@ export async function assertRedisSafety(client: { configGet: (keys: string[]) =>
   if (!Array.isArray(commands) || !commands[0]) throw new Error('Redis must support WAITAOF (7.2+)');
 }
 export { initializeAdmission, assertAdmissionConfiguration, saleKey } from './sales/configuration.js';
+export { admitPurchase, admissionKeys, AdmissionUncertainError, type AdmissionResult, type Reservation } from './sales/admission.js';

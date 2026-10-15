@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "redis": "6.3.0"
+    "redis": "6.3.0",
+    "@flash/contracts": "workspace:*"
   }
 }

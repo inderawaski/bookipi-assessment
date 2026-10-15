@@ -1,6 +1,6 @@
 # Flash sale prototype
 
-The workspace includes the test foundation, sale configuration and shared public contracts. Admission, worker consumption, HTTP purchase routes and the reactive purchase page follow in DEV-9–DEV-15. The worker currently exposes dependency health and does not consume orders.
+The workspace includes the test foundation, sale configuration, shared public contracts and [atomic Redis admission](docs/redis-admission.md). Durability confirmation, worker consumption, HTTP purchase routes and the reactive purchase page follow in DEV-10–DEV-15. The worker currently exposes dependency health and does not consume orders.
 
 ## Start from a fresh checkout
 
@@ -67,7 +67,7 @@ Every `createRedisConnection` call owns a separate physical connection:
 - `blocking-consumer`: a dedicated socket per consumer for finite `XREADGROUP BLOCK` calls; never the API command socket.
 - `durability`: exclusive ownership for a write and its subsequent `WAITAOF`; do not interleave concurrent write/barrier sequences. WAITAOF covers preceding writes on **that connection**. A separate socket that did not perform the write is not a valid durability barrier.
 
-This issue supplies the connection factory and policy checks, not an admission/durability implementation. Future callers must use finite Redis BLOCK/WAITAOF timeouts and handle uncertain outcomes as specified in DEV-10.
+The Redis package supplies atomic reservation and stream append; durability confirmation is deferred to DEV-10. Future callers must use finite Redis BLOCK/WAITAOF timeouts and handle uncertain outcomes as specified in DEV-10.
 
 Restart without removing volumes:
 

@@ -107,6 +107,9 @@ importers:
 
   packages/redis:
     dependencies:
+      '@flash/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       redis:
         specifier: 6.3.0
         version: 6.3.0

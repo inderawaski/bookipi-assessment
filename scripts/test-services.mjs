@@ -21,7 +21,7 @@ try {
   } else {
     const pg = docker(['port', 'postgres', '5432'], true).split(':').at(-1);
     const redis = docker(['port', 'redis', '6379'], true).split(':').at(-1);
-    const result = spawnSync('pnpm', ['exec', 'vitest', 'run', '--config', 'vitest.services.config.ts'], {
+    const result = spawnSync('pnpm', ['exec', 'vitest', 'run', '--config', 'vitest.services.config.ts', ...process.argv.slice(3)], {
       stdio: 'inherit', env: { ...process.env, NODE_ENV: 'test', TEST_SUITE: suite, TEST_PROJECT: project,
         TEST_DATABASE_URL: `postgresql://flash_test:test_only@127.0.0.1:${pg}/flash_test`, TEST_REDIS_URL: `redis://127.0.0.1:${redis}` },
     });
