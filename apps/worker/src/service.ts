@@ -1,3 +1,4 @@
+import { createOrderConsumer } from './orders/consumer.js';
 import { createHealthServer } from './health.js';
 import { createDatabase, listSales } from '@flash/database';
 import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, DurableAdmission, saleKey } from '@flash/redis';
@@ -30,9 +31,15 @@ export async function startService(service: 'api' | 'worker') {
     }
   };
   const app = createHealthServer(probe);
-  app.addHook('onClose', async () => { if (redis.isOpen) redis.destroy(); await database.end(); });
-  try { await probe(); await app.listen({ host: config.host, port: config.port }); }
-  catch { await app.close(); throw new Error(`${service} startup failed: check PostgreSQL availability, Redis persistence, and sale configuration`); }
+  const consumer: { stop?: () => Promise<void> } = {};
+  app.addHook('onClose', async () => { await consumer.stop?.(); if (redis.isOpen) redis.destroy(); await database.end(); });
+  try {
+    await probe();
+    consumer.stop = await createOrderConsumer(config.redisUrl, database, admission,
+    async () => (await listSales(database)).map(sale => sale.id),
+    () => app.log.error('Order processing failed; pending work retained'));
+    await app.listen({ host: config.host, port: config.port });
+  } catch { await app.close(); throw new Error(`${service} startup failed: check PostgreSQL availability, Redis persistence, and sale configuration`); }
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { void app.close(); });
   return app;
 }

@@ -7,3 +7,4 @@ export function createDatabase(connectionString: string, max: number, timeoutMs:
 export { migrate } from './sales/schema.js';
 export { normalizeIdentifier, validateSale, persistSale, listSales } from './sales/configuration.js';
 export type { SaleConfiguration } from './sales/configuration.js';
+export { persistOrder, OrderConflictError, type OrderAdmission } from './sales/orders.js';

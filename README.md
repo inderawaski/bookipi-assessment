@@ -100,3 +100,29 @@ Test services and the k6 generator each have a 1 CPU / 512 MiB limit. The k6 scr
 See [docs/framework-guides.md](docs/framework-guides.md) for the official guides consulted and [docs/verification.md](docs/verification.md) for the current verification record.
 
 Sale schema, migration/configuration commands, identifier limits, and partial-initialization recovery: [sale configuration](docs/sale-configuration.md).
+
+### Durable order worker (DEV-11)
+
+The worker consumes each sale's stream through the `orders` consumer group using
+separate blocking-read and command connections. Each delivery confirms local AOF
+admission durability before opening a PostgreSQL transaction. The unique
+`(flash_sale_id, user_identifier)` constraint serializes replays and concurrent
+workers; matching admission timestamps reuse the existing order. A missing commit
+reply leaves the delivery pending so retry resolves through that same constraint.
+Only a confirmed commit permits writing the identifier-to-order mapping in
+`<sale admission key>:completed`, followed by `XACK`. Neither acknowledgement nor
+completion deletes stream entries or releases reservations. Processing uses the
+original admission timestamp and does not recheck the sale window.
+
+Pending deliveries become eligible for reclamation after 60 seconds, well beyond
+the normal durability and database statement deadlines. PostgreSQL uniqueness
+still protects a slow original worker that resumes after reclamation. Conflicting
+identity metadata is retained in `<sale admission key>:quarantine`, keyed by stream
+ID; the original entry remains pending for investigation. Transient failures remain
+pending. Bounded retry policies, operator replay, and connection recovery are the
+follow-up DEV-12 scope.
+
+Run `pnpm test:integration -- tests/integration/orders.test.ts` with Docker running
+for real PostgreSQL/Redis concurrent-delivery evidence. Unit tests exercise
+transaction rollback, uncertain commit replies, and failures between commit,
+completion publication, and acknowledgement.
