@@ -64,9 +64,15 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
     await admission.recover(sale, []);
     const post = (key: string) => app.inject({ method: 'POST', url: `/sales/${id}/purchases`, payload: { identifier: 'person', idempotencyKey: key } });
     expect((await post('early')).json()).toEqual({ status: 'REJECTED', reason: 'upcoming' });
-    await new Promise(resolve => setTimeout(resolve, Math.max(0, start - Date.now())));
+    await expect.poll(async () => {
+      const time = await redis.sendCommand(['TIME']) as string[];
+      return Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >= start;
+    }, { timeout: 5000, interval: 25 }).toBe(true);
     expect((await post('accepted')).json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
-    await new Promise(resolve => setTimeout(resolve, Math.max(0, end - Date.now())));
+    await expect.poll(async () => {
+      const time = await redis.sendCommand(['TIME']) as string[];
+      return Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >= end;
+    }, { timeout: 5000, interval: 25 }).toBe(true);
     expect((await post('accepted')).json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
     expect((await post('early')).json()).toEqual({ status: 'REJECTED', reason: 'upcoming' });
     expect((await app.inject(`/sales/${id}`)).json()).toMatchObject({ status: 'ENDED' });

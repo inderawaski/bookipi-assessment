@@ -25,6 +25,10 @@ process.env.TEST_POSTGRES_PORT = String(listeners[0].address().port);
 process.env.TEST_REDIS_PORT = String(listeners[1].address().port);
 await Promise.all(listeners.map(server => new Promise(resolve => server.close(resolve))));
 try {
+  if (suite !== 'stress') {
+    const build = spawnSync('pnpm', ['--filter', './packages/**', 'build'], { stdio: 'inherit' });
+    if (build.status !== 0) throw new Error('Workspace package build failed');
+  }
   docker(['up', '-d', '--wait', 'postgres', 'redis']);
   if (suite === 'stress') {
     docker(['--profile', 'stress', 'run', '--build', '--rm', 'k6']);

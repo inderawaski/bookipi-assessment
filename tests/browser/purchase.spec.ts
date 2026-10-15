@@ -172,3 +172,15 @@ test('automatic lookup resolves uncertain confirmation and clears its warning', 
   await expect(page.getByText(/Confirmation uncertain/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Buy Now' })).toBeVisible();
 });
+
+for (const offset of [-86400000, 86400000]) {
+  test(`uses server sale status with browser clock offset ${offset}`, async ({ page }) => {
+    await page.clock.setFixedTime(new Date(Date.now() + offset));
+    await setup(page);
+    await page.getByLabel('Your identifier').fill('clock-skew');
+    await expect(page.getByRole('button', { name: 'Buy Now' })).toBeEnabled();
+    await page.route('**/purchases', route => route.fulfill({ status: 409, json: { status: 'REJECTED', reason: 'ended' } }));
+    await page.getByRole('button', { name: 'Buy Now' }).click();
+    await expect(page.getByText('The sale has ended.')).toBeVisible();
+  });
+}

@@ -119,3 +119,33 @@ Verified on 2026-10-15:
 API coverage includes strict schemas, malformed/oversized input, generic encoded identifiers, normalization collisions, idempotency conflicts, explicit duplicates, confirming/queued/delayed states, committed success, sale status/countdown data, missing sales, CORS, database and Redis unavailability, lost-response replay, and replay after closing. A closing-time test exposed the earlier admission implementation's rejection reevaluation; request outcomes now retain their original key/payload binding, including rejections. The old reevaluation assertion and documentation were aligned with the shared contract. Unconfirmed rejection writes remain PROCESSING.
 
 Self-review checked database authority for SUCCESS, fenced absence after reconciliation, preservation of admission evidence after read failures, outcome retention and AOF barriers, schema serialization, input limits, and identifier-free API/proxy logs. Automatic API request logs are disabled; proxy access logs contain only method/status/elapsed time and request error logs are suppressed because Nginx includes raw URLs. No browser or stress run was performed for these backend routes; no new capacity claim is made. The human duplicate/uncertain-response walkthrough remains pending.
+
+## DEV-16 integration and invariant verification
+
+Verified on 2026-10-16 (Asia/Jakarta), macOS arm64, Node 22.23.2,
+pnpm 11.25.0, Docker Engine 29.7.2, pinned Redis 7.4.8 and PostgreSQL 18.3:
+
+- `pnpm test:integration`: 40 tests across 10 files passed, including actual dependency restart and the new two-API/two-worker accounting scenario.
+- `pnpm test:unit`: 64 tests across 16 files passed.
+- `pnpm test:browser`: 20 Chromium tests passed, including browser clocks one day ahead/behind.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build`, final test-source TypeScript check, `node --check scripts/test-services.mjs`, and `git diff --check`: passed.
+
+Initial sandboxed attempts could not access Docker or bind a localhost test server;
+those checks passed with sandbox escalation. The first invariant run reached seven
+of eight durable orders within its 15-second drain budget. Each worker delivery
+uses separate retry-claim and admission-confirmation AOF barriers; with everysec
+fsync, an eight-message batch needs more than that budget. The final bounded
+30-second drain check passed with all acknowledged identifiers committed and zero
+pending messages. No production timeout or persistence policy changed.
+
+Review covered independent Redis/SQL/acknowledgement accounting, stock conservation,
+identifier and request uniqueness, stream order/timestamp evidence, clock restoration,
+resource cleanup, replay after closing, group drain and recovery without stock reset.
+The runner now builds shared packages before loading service tests, avoiding stale
+workspace dist imports on a fresh checkout. Boundary waits observe Redis TIME.
+No new production behavior or dependencies were introduced.
+
+See [the P00 coverage matrix](integration-coverage.md) for test names and scope.
+API and worker instances run in-process with real service connections; browser tests
+stub HTTP. Deterministic process/network failures and measured stress remain owned
+by DEV-17–DEV-19. The human invariant/real-service checkpoint remains pending.
