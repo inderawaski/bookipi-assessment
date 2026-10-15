@@ -1,0 +1,39 @@
+# All DEV-19 attempts
+
+| Project | Case | Valid dispatch | Last write ms | Orders | Drain ms | Passed |
+| --- | --- | --- | --- | --- | --- | --- |
+| flash-test-261359ec-a7d8-4fe7-bb85-5ab6413d0e3d | stock10k-100k | false | — | — | — | false |
+| flash-test-44e0a0f4-f000-4603-8951-88679ccdb25b | same-key-retries | false | — | — | — | false |
+| flash-test-b6ccdfac-774d-4957-8da9-3651f5a1193e | stock100-100k | false | — | — | — | false |
+| flash-test-d37af619-1bc2-4df1-9666-cd504c890013 | stock100-10k | false | — | — | — | false |
+| flash-test-df811979-cf80-4d4a-9f83-92039bf2b1cd | new-key-duplicates | false | — | — | — | false |
+| flash-test-e647ef32-2ca1-4e97-b764-4be22ac12144 | duplicates | false | — | — | — | false |
+| flash-test-fd86c149-f20c-4161-b771-cd72f60c3355 | stock100-100k | false | — | — | — | false |
+| flash-test-85e447e6-2c27-4dd9-a241-8e9dc24c32fa | stock100-1k | true | 900.9 | 16 | 30764.4 | true |
+| flash-test-bb3f2fd6-686b-4f8f-aab0-e8f26fae942e | stock100-1k | true | 899.4 | 15 | 28422.6 | true |
+| flash-test-6998287b-5b40-4db2-a78f-572aeec0b26f | stock100-10k | false | 878.0 | 30 | 60292.3 | false |
+| flash-test-27ee0d13-c0f0-4820-bd39-cbd81407c09c | duplicates | false | 905.3 | 16 | 32118.9 | false |
+| flash-test-2f9a19c3-da60-4069-8e19-c74c864c8c28 | stock10k-100k | false | 1842.2 | 61 | 120084.6 | false |
+| flash-test-76baa3b3-da22-483c-83cd-88fa63781ce5 | sufficient-stock | true | 899.9 | 16 | 30772.0 | true |
+| flash-test-e689252d-0397-471d-92c7-bdeb1eae0287 | opening | true | 900.1 | 0 | 15.1 | false |
+| flash-test-2f511bc7-fe9b-4574-9a91-f8a51ccd3933 | closing | true | 900.0 | 16 | 30751.5 | true |
+| flash-test-57b1dbc5-bbe4-4ce4-be10-e455ba67aa82 | worker-crash | true | 899.6 | 15 | 56976.2 | true |
+| flash-test-2004b2ca-beec-484b-b271-d7a3d1f573d5 | repeated | true | 900.1 | 23 | 39011.9 | true |
+| flash-test-622b0202-76e2-4cd0-b01a-e2086771271b | stock10k-100k | false | — | — | — | false |
+| flash-test-421d88c0-bd9a-4187-80a0-5d7ad7c7a9e7 | stock10k-100k | false | — | — | — | false |
+| flash-test-e94efbce-140c-46f0-9852-be9160330539 | stock100-10k | false | — | — | — | false |
+| flash-test-38d78af7-9ffd-44a9-84fb-ef50736bbb44 | duplicates | true | 901.0 | 45 | 86106.1 | true |
+| flash-test-92a409c1-59bc-4bf7-8356-3458ed2d3a3a | stock100-100k | false | 16547.2 | 100 | 181725.3 | false |
+| flash-test-9bba78c6-4759-4787-a7b6-39d4abca00db | healthy | true | 789.7 | 8 | 14401.3 | true |
+| flash-test-4bee0d6e-34d3-42f7-84f4-84e5c9d87bd2 | closing-worker-crash | true | 899.5 | 16 | 57224.5 | true |
+| flash-test-82fa83d1-b18a-4456-aba1-0cea46ba7e67 | opening | true | 844.7 | 8 | 14319.3 | true |
+| flash-test-315b7ec2-0986-4cc6-8583-fb380bfbaa1e | stock100-100k | false | — | — | — | false |
+| flash-test-24402a70-588a-4247-a405-3057c68b0e26 | stock100-100k | false | — | — | — | false |
+| flash-test-651050aa-3635-477e-912a-dd0cb1c5f6ae | sufficient-stock | false | — | — | — | false |
+| flash-test-6d815de0-68f7-483e-bf39-c87742613e80 | sufficient-stock | false | — | — | — | false |
+| flash-test-8c8dde5d-dd55-4615-9d16-e490688e1ec0 | sufficient-stock | true | 900.8 | 16 | 30956.5 | true |
+| flash-test-dc003c8a-22c7-4c49-b0f4-78649f9db408 | sufficient-stock | true | 899.8 | 48 | 96297.0 | true |
+| flash-test-893d059d-e053-4dc1-ba10-a5b047a4883e | sufficient-stock | true | 900.1 | 47 | 40962.0 | true |
+| flash-test-c00835cf-62e7-4a74-bb0d-e7d7b74102aa | stock100-10k | false | 1180.5 | 34 | 20616.2 | false |
+| flash-test-9053f623-70d3-4b8b-9e19-717e33a01a6e | stock10k-100k | false | 9292.2 | 178 | 112357.2 | false |
+| flash-test-0aefe7e8-9cc2-48d7-b060-7d88e55f6981 | stock100-10k | true | 947.1 | 47 | 38078.4 | true |

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { inputs, scenarios, summarize, validateFinal, resourceSample } from './accounting.mjs';
+import { inputs, scenarios, summarize, validateFinal, resourceSample, admissionsWithinWindow } from './accounting.mjs';
 import { burst } from './generator.mjs';
 
 test('prescribed cases and duplicate keys have exact cardinality', () => {
@@ -84,4 +84,48 @@ test('Docker terminal control sequences are removed from machine-readable sample
   assert.ok(sample.sampledAt);
   assert.equal(resourceSample('\u001b[H'), null);
   assert.throws(() => resourceSample('not JSON'));
+});
+
+test('admission window includes opening and excludes closing, even after recovery', () => {
+  const sale = { startsAt: new Date(1000).toISOString(), endsAt: new Date(2000).toISOString() };
+  const entries = time => [{ message: { admitted_at_ms: String(time) } }];
+  assert.equal(admissionsWithinWindow(entries(1000), sale), true);
+  assert.equal(admissionsWithinWindow(entries(1999), sale), true);
+  assert.equal(admissionsWithinWindow(entries(999), sale), false);
+  assert.equal(admissionsWithinWindow(entries(2000), sale), false);
+  assert.equal(admissionsWithinWindow(entries(NaN), sale), false);
+});
+
+test('dispatch hook runs after preconnect and before any request is written', async () => {
+  let ready = false, started = false;
+  const server = http.createServer((request, response) => {
+    assert.ok(ready && started);
+    request.resume();
+    response.end('{"status":"REJECTED","reason":"busy"}');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await burst(`http://127.0.0.1:${server.address().port}`, 'sale', { requests: 2, identifiers: 2 }, {
+      beforeDispatch: async () => { await new Promise(resolve => setTimeout(resolve, 20)); ready = true; },
+      onDispatch: () => { assert.ok(ready); started = true; },
+    });
+    assert.equal(result.validDispatch, true);
+    assert.equal(result.completed, 2);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('closed preconnected sockets retain failed queued request accounting', async () => {
+  const server = http.createServer((request, response) => {
+    request.resume();
+    response.setHeader('Connection', 'close');
+    setTimeout(() => response.end('{"status":"REJECTED","reason":"busy"}'), 200);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await burst(`http://127.0.0.1:${server.address().port}`, 'sale', { requests: 100, identifiers: 100 }, { connections: 10, timeoutMs: 2000 });
+    assert.equal(result.records.length, 100);
+    assert.equal(result.validDispatch, false);
+    assert.ok(result.outcomes.transport_error > 0);
+    assert.equal(Object.values(result.outcomes).reduce((sum, count) => sum + count, 0), 100);
+  } finally { await new Promise(resolve => server.close(resolve)); }
 });

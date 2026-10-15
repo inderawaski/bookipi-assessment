@@ -7,6 +7,13 @@ export const scenarios = [
   { name: 'stock10k-100k', stock: 10000, requests: 100000, identifiers: 100000 },
   { name: 'new-key-duplicates', stock: 100, requests: 1000, identifiers: 100 },
   { name: 'same-key-retries', stock: 100, requests: 1000, identifiers: 100, sameKey: true },
+  { name: 'healthy', stock: 8, requests: 8, identifiers: 8, expectFill: true },
+  { name: 'closing-worker-crash', stock: 1000, requests: 1000, identifiers: 1000, boundary: 'closing', failure: 'worker' },
+  { name: 'sufficient-stock', stock: 1000, requests: 1000, identifiers: 1000 },
+  { name: 'opening', stock: 16, requests: 16, identifiers: 16, boundary: 'opening' },
+  { name: 'closing', stock: 1000, requests: 1000, identifiers: 1000, boundary: 'closing' },
+  { name: 'worker-crash', stock: 1000, requests: 1000, identifiers: 1000, failure: 'worker' },
+  { name: 'repeated', stock: 1000, requests: 1000, identifiers: 1000, repeats: 3 },
 ];
 export function inputs(scenario) {
   return Array.from({ length: scenario.requests }, (_, i) => ({ identifier: `person-${i % scenario.identifiers}`,
@@ -53,4 +60,9 @@ export function validateFinal(stock, { entries, allocations, orders, pending, re
 export function resourceSample(line) {
   const clean = stripVTControlCharacters(line).trim();
   return clean ? { sampledAt: new Date().toISOString(), ...JSON.parse(clean) } : null;
+}
+
+export function admissionsWithinWindow(entries, sale) {
+  return entries.every(entry => Number(entry.message.admitted_at_ms) >= Date.parse(sale.startsAt) &&
+    Number(entry.message.admitted_at_ms) < Date.parse(sale.endsAt));
 }

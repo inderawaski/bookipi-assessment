@@ -1,0 +1,15 @@
+{
+  "project": "flash-test-6998287b-5b40-4db2-a78f-572aeec0b26f",
+  "service": "proxy",
+  "observation": "docker inspect <container> --format '{{json .State}}'",
+  "state": {
+    "Status": "exited",
+    "Running": false,
+    "OOMKilled": true,
+    "ExitCode": 137,
+    "StartedAt": "2026-10-15T18:01:25.845786594Z",
+    "FinishedAt": "2026-10-15T18:01:38.957213336Z"
+  },
+  "configuration": "64 MiB, 0.5 CPU, auto workers; logs reported twelve workers and insufficient 1024 worker_connections",
+  "resolution": "Separate stress profile: 512 MiB, 1 CPU, one worker, 65536 worker_connections. Durability settings unchanged."
+}

@@ -2,7 +2,7 @@
 
 Run `pnpm test:harness` for accounting and real TCP timing tests. Run
 `pnpm test:stress stock100-1k` for the smallest full pipeline check, or
-`pnpm test:stress` for all seven cases. Docker must be running. Each case creates
+`pnpm test:stress` for all prescribed and additional cases. Docker must be running. Each case creates
 its own randomly named `flash-test-*` Compose project and volumes, migrates and
 initializes a fresh sale **before opening**, and waits on Redis TIME. Cleanup
 explicitly deletes only that project's test volumes. No demonstration data is reset.
@@ -32,7 +32,7 @@ then rerun the same command. Do not quote an invalid run as achieved throughput.
 100,000 simultaneous connections from one source address would exceed its TCP
 port budget; larger bursts reuse sockets and still require every write to finish
 inside the window. The runner makes scheduling limitations visible.
-Execution and scaling experiments belong to DEV-19.
+Measured execution and scaling evidence is in [DEV-19 results](../../docs/stress-results.md).
 
 Artifacts are under `test-results/stress/<project>/<scenario>/`:
 
@@ -60,8 +60,65 @@ mappings and admission timestamps, and preservation of every durable acknowledge
 Bounded overload rejections can make allocation lower than stock; no fill-rate
 assumption is built into the invariant checks.
 
-Queue drain starts after burst responses finish and is bounded at 120 seconds.
+Queue drain starts after burst responses finish and is bounded at 300 seconds.
 Reconciliation reads PostgreSQL and Redis directly. No purchase POSTs are issued
-after the scheduled burst. Readiness probes and metrics GETs run outside the burst.
+after the scheduled burst. Readiness probes and metrics GETs run outside the burst; DEV-19 adds concurrent order-status polling.
 Redis uses the same AOF everysec/noeviction configuration and application WAITAOF
 barriers as production; the harness asserts these settings before starting.
+
+## DEV-19 experiments
+
+The harness now routes through a dedicated Nginx proxy, so replica comparisons
+exercise a common ingress. This measurement profile uses **one proxy CPU and
+512 MiB**, one Nginx worker and 65,536 connection slots; it is a separate recorded
+budget from the demonstration proxy. Application durability and overload settings
+remain unchanged. `STRESS_API_REPLICAS` and `STRESS_WORKER_REPLICAS` accept 1–8.
+
+```sh
+pnpm test:stress stock100-1k stock100-10k duplicates stock100-100k stock10k-100k
+pnpm test:stress healthy sufficient-stock opening closing closing-worker-crash worker-crash repeated
+STRESS_API_REPLICAS=3 STRESS_WORKER_REPLICAS=1 pnpm test:stress sufficient-stock
+STRESS_API_REPLICAS=3 STRESS_WORKER_REPLICAS=3 pnpm test:stress sufficient-stock
+node scripts/stress/report.mjs test-results/stress/flash-test-<uuid>
+```
+
+`healthy` offers eight distinct buyers with eight units and asserts full allocation.
+`sufficient-stock` offers 1,000 distinct buyers with 1,000 units, allowing saturation
+at the default bounded admission concurrency instead of mostly sold-out reads.
+Opening/closing experiments preconnect first, wait on Redis TIME, then aim to start
+450 ms before the boundary. The actual first/last dispatch and Redis admission
+timestamps must be inspected to confirm a straddle; a setup delay is not evidence
+of a boundary test. Every run checks `startsAt <= admitted_at < endsAt`.
+Boundary cases replay an admitted key after closure and require a completed order.
+
+Polling runs concurrently with dispatch and drain at up to ten GETs/second for
+`person-0`; each status/error and timestamp is retained. `repeated` makes three
+bursts against the same sale with the same input keys, then reconciles all admissions
+and acknowledged identities. These repeated bursts test replay, not three fresh
+populations. `worker-crash` and `closing-worker-crash` request SIGKILL 200 ms after
+dispatch begins, wait two seconds, start the worker, and drain. Actual kill/recovery
+wall timestamps are recorded because Docker control latency can vary. The latter
+case exercises recovery/completion after sale closure. Redis and DB failure
+boundaries remain covered by `pnpm test:failure`.
+
+The report command takes explicit isolated project paths and writes compressed
+copies of **all** their files to `docs/evidence/dev19`, with an uncompressed SHA-256
+manifest and compact summaries. Include failed attempts. Raw request timestamps
+remain in `result.json.gz`; decompress with `gzip -dc`. Human checkpoint F remains
+pending until a reviewer confirms generator validity and the measured results.
+
+The opening case uses 16 distinct buyers/units so pre-opening requests do not
+occupy every bounded admission slot for the entire post-opening half. This changes
+the additional boundary workload only; the five prescribed workloads are fixed.
+
+For a host with a small ephemeral-port budget, explicitly cap a calibration run:
+`STRESS_CONNECTIONS=1000 STRESS_MAX_CONNECTIONS=1000 pnpm test:stress stock100-10k duplicates stock100-100k stock10k-100k`.
+The cap controls automatic socket-capacity retries only; dispatch still requires
+**every** offered request write inside 1,000 ms. Invalid capped runs exit nonzero.
+`preconnectMs` measures TCP setup; `readyWaitMs` separately records the wait for
+Redis's target time. Earlier DEV-19 attempts recorded their sum as `preconnectMs`.
+
+After a large socket attempt, allow the host's ephemeral ports/TIME_WAIT state to
+recover before comparing replicas. For sufficient-stock replica calibration,
+`STRESS_CONNECTIONS=100 STRESS_MAX_CONNECTIONS=100` avoids allocating thousands
+of idle sockets; keep that setting identical across the replica comparisons.

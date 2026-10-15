@@ -19,3 +19,11 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  proxy:
+    image: nginx:1.28.2-alpine
+    cpus: 1.0
+    mem_limit: 512m
+    ports: ["127.0.0.1::80"]
+    volumes: ["./deploy/stress-proxy.conf:/etc/nginx/nginx.conf:ro"]
+    depends_on:
+      api: { condition: service_healthy }

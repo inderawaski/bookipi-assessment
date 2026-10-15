@@ -6,7 +6,7 @@ import { inputs, summarize } from './accounting.mjs';
 
 // Finish fires after headers/body are handed to the OS, after socket acquisition.
 // This is a conservative upper bound on dispatch, not an iteration-start proxy.
-export async function burst(baseUrl, saleId, scenario, { connections = Math.min(scenario.requests, 10000), timeoutMs = 30000 } = {}) {
+export async function burst(baseUrl, saleId, scenario, { connections = Math.min(scenario.requests, 10000), timeoutMs = 30000, beforeDispatch, onDispatch } = {}) {
   const url = new URL(baseUrl);
   if (url.protocol !== 'http:') throw new Error('Isolated harness requires HTTP');
   if (!Number.isInteger(connections) || connections < 1 || connections > scenario.requests) throw new Error('Connections must be between 1 and offered requests');
@@ -33,8 +33,11 @@ export async function burst(baseUrl, saleId, scenario, { connections = Math.min(
       if (!socket || socket.destroyed) { callback(new Error('Preallocated socket unavailable')); return; }
       return socket;
     };
+    const preconnectedAt = performance.now();
+    await beforeDispatch?.();
     loop.enable();
     const epoch = performance.now();
+    onDispatch?.();
     const tasks = [];
     let cursor = 0;
     while (cursor < records.length) {
@@ -59,10 +62,16 @@ export async function burst(baseUrl, saleId, scenario, { connections = Math.min(
               catch { finish('invalid_response'); }
             });
           });
-          const timer = setTimeout(() => request.destroy(new Error('Request deadline')), timeoutMs);
+          const timer = setTimeout(() => {
+            record.error = 'Request deadline';
+            finish('transport_error');
+            request.destroy(new Error('Request deadline'));
+          }, timeoutMs);
           request.once('close', () => clearTimeout(timer));
           request.once('finish', () => { record.dispatchMs = performance.now() - epoch; });
-          request.once('error', error => { record.error = error.code ?? error.message; finish('transport_error'); });
+          // Agent queue failures can report the same request on multiple socket closes.
+          // Keep the listener until collection ends; finish still accounts for it once.
+          request.on('error', error => { record.error = error.code ?? error.message; finish('transport_error'); });
           request.end(body);
         }));
       }
@@ -70,7 +79,7 @@ export async function burst(baseUrl, saleId, scenario, { connections = Math.min(
     }
     await Promise.all(tasks);
     return { ...summarize(records, scenario.requests), records, elapsedMs: performance.now() - epoch,
-      generator: { connections, preconnectMs: epoch - started, cpuMicros: process.cpuUsage(cpu), resourceUsage: process.resourceUsage(),
+      generator: { connections, preconnectMs: preconnectedAt - started, readyWaitMs: epoch - preconnectedAt, cpuMicros: process.cpuUsage(cpu), resourceUsage: process.resourceUsage(),
         memory: process.memoryUsage(), eventLoopDelayMaxMs: loop.max / 1e6,
         bytesWritten: sockets.reduce((sum, socket) => sum + socket.bytesWritten, 0), bytesRead: sockets.reduce((sum, socket) => sum + socket.bytesRead, 0) } };
   } catch (error) {
