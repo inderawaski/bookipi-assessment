@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "@flash/contracts": "workspace:*"
   },
   "devDependencies": {
     "vite": "8.3.4",

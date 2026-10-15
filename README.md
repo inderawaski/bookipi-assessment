@@ -22,7 +22,7 @@ curl --fail http://localhost:8080/api/health/ready
 
 Open [localhost:8080](http://localhost:8080). Example credentials are local demonstration values; `.env` is ignored. URL-encode special characters when constructing database URLs. Do not expose these development services to an untrusted network.
 
-For local application development, start only dependencies with `docker compose up -d --wait postgres redis`, then run `pnpm --filter @flash/api start` and `pnpm --filter @flash/worker start` after building. Start Vite with `pnpm dev:web`. The backend start commands load root `.env` using Node. Vite serves the scaffold independently; purchase integration is deferred.
+For local application development, start only dependencies with `docker compose up -d --wait postgres redis`, then run `pnpm --filter @flash/api start` and `pnpm --filter @flash/worker start` after building. Start Vite with `pnpm dev:web`. The backend start commands load root `.env` using Node. Vite proxies `/api` to the local API at port 3000. Open `http://localhost:5173/?sale=sale-1` (or `http://localhost:8080/?sale=sale-1` with Compose) using your configured sale ID. The default sale ID is `flash-sale`. Identifiers are optionally remembered in local storage; request keys are held only in memory. A lost purchase response can be retried with the same key; pending orders continue polling with backoff capped at 30 seconds, including after closure. The countdown is an estimate; the backend authorizes admission.
 
 ## Layout
 
