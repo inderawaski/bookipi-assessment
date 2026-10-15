@@ -4,3 +4,6 @@ export function createDatabase(connectionString: string, max: number, timeoutMs:
   pool.on('error', () => { /* Idle connection failures are reported by the next readiness probe. */ });
   return pool;
 }
+export { migrate } from './sales/schema.js';
+export { normalizeIdentifier, validateSale, persistSale, listSales } from './sales/configuration.js';
+export type { SaleConfiguration } from './sales/configuration.js';

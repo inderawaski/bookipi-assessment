@@ -16,3 +16,4 @@ export async function assertRedisSafety(client: { configGet: (keys: string[]) =>
   const commands = await client.sendCommand(['COMMAND', 'INFO', 'WAITAOF']);
   if (!Array.isArray(commands) || !commands[0]) throw new Error('Redis must support WAITAOF (7.2+)');
 }
+export { initializeAdmission, assertAdmissionConfiguration, saleKey } from './sales/configuration.js';

@@ -98,3 +98,5 @@ Service tests use a standalone Compose file, random project names, dynamic local
 Test services and the k6 generator each have a 1 CPU / 512 MiB limit. The k6 script is a readiness smoke check, not evidence of a one-second sale burst or throughput. DEV-16–DEV-19 add business invariants, deterministic crash boundaries and measured load evidence. Docker Desktop storage and its VM filesystem can have substantially different AOF/fsync latency from bare-metal Linux: record host/VM resources, storage, achieved dispatch, response latency and drain time when benchmarking.
 
 See [docs/framework-guides.md](docs/framework-guides.md) for the official guides consulted and [docs/verification.md](docs/verification.md) for the current verification record.
+
+Sale schema, migration/configuration commands, identifier limits, and partial-initialization recovery: [sale configuration](docs/sale-configuration.md).

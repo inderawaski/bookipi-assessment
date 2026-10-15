@@ -16,7 +16,9 @@
     "test:failure": "node scripts/test-services.mjs failure",
     "test:browser": "playwright test",
     "test:stress": "node scripts/test-services.mjs stress",
-    "dev:web": "pnpm --filter @flash/web dev"
+    "dev:web": "pnpm --filter @flash/web dev",
+    "db:migrate": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs migrate",
+    "sale:configure": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs configure"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
