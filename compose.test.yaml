@@ -12,7 +12,7 @@ services:
     ports: ["127.0.0.1:${TEST_POSTGRES_PORT:-0}:5432"]
     volumes: ["postgres-test-data:/var/lib/postgresql"]
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "flash_test", "-d", "flash_test"]
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_PASSWORD\" psql --no-password -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" -v ON_ERROR_STOP=1 -tAc 'SELECT 1' >/dev/null"]
       interval: 1s
       timeout: 2s
       retries: 30

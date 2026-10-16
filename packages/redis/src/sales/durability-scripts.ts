@@ -32,7 +32,11 @@ return {request, tostring(record.admittedAtMs), record.streamId}
 /** Operator/startup operation; all allocations remain retained, including completed orders. */
 export const recoveryScript = `
 local function fail()
-  redis.call('HSET', KEYS[1], 'recovery_diagnostic', 'invalid accounting/schema/association; inspect mappings, stream, retry metadata and durable orders')
+  -- Missing pre-sale state must stay missing so configuration can safely resume.
+  if redis.call('EXISTS', KEYS[1]) == 1 then
+    redis.call('HDEL', KEYS[1], 'recovered_run')
+    redis.call('HSET', KEYS[1], 'recovery_diagnostic', 'invalid accounting/schema/association; inspect configuration, mappings, stream, retry metadata and durable orders')
+  end
   return redis.error_reply('ADMISSION_RECOVERY invalid accounting/schema/association; inspect sale state and durable orders')
 end
 local run = string.match(redis.call('INFO', 'server'), 'run_id:([^\\r\\n]+)')
@@ -40,6 +44,9 @@ if redis.call('PTTL', KEYS[1]) >= 0 then return fail() end
 redis.call('HDEL', KEYS[1], 'recovered_run')
 if run ~= ARGV[1] or redis.call('HGET', KEYS[1], 'admission_fault') then return fail() end
 if redis.call('HGET', KEYS[1], 'configuration_version') ~= '1' then return fail() end
+if redis.call('HGET', KEYS[1], 'starts_at') ~= ARGV[4] or
+   redis.call('HGET', KEYS[1], 'ends_at') ~= ARGV[5] or
+   redis.call('HGET', KEYS[1], 'initial_stock') ~= ARGV[6] then return fail() end
 for i = 1, 5 do
  local expected = i == 5 and 'stream' or 'hash'
  local actual = redis.call('TYPE', KEYS[i]).ok
@@ -75,7 +82,9 @@ for _, raw in ipairs(redis.call('HVALS', KEYS[1] .. ':retries')) do
     (state.completed ~= nil and type(state.completed) ~= 'boolean') then return fail() end
 end
 local initial = tonumber(redis.call('HGET', KEYS[1], 'initial_stock'))
-local remaining = tonumber(redis.call('HGET', KEYS[1], 'remaining_stock'))
+local remainingRaw = redis.call('HGET', KEYS[1], 'remaining_stock')
+if not remainingRaw or not string.match(remainingRaw, '^%d+$') then return fail() end
+local remaining = tonumber(remainingRaw)
 if not initial or not remaining or remaining < 0 or remaining > initial then return fail() end
 local count = initial - remaining
 for i = 2, 4 do if redis.call('HLEN', KEYS[i]) ~= count or redis.call('PTTL', KEYS[i]) >= 0 then return fail() end end

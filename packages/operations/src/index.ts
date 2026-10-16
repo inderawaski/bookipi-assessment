@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+export { singleFlightProbe } from './readiness.js';
 
 // Names are code-owned constants, never identifiers supplied by clients.
 export class Metrics {

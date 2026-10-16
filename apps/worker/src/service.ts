@@ -1,4 +1,4 @@
-import { Metrics, registerOperations } from '@flash/operations';
+import { Metrics, registerOperations, singleFlightProbe } from '@flash/operations';
 import { createOrderConsumer } from './orders/consumer.js';
 import { createHealthServer } from './health.js';
 import { createDatabase, listSales } from '@flash/database';
@@ -11,7 +11,7 @@ export async function startService(service: 'api' | 'worker') {
   const metrics = new Metrics();
   const admission = new DurableAdmission(config.redisUrl, config.admissionConcurrency, config.admissionTimeoutMs, seconds => metrics.observe('barrier_latency_seconds', seconds));
   const recoveredRuns = new Map<string, string>();
-  const probe = async () => {
+  const probe = singleFlightProbe(async () => {
     if (!redis.isReady) await redis.connect();
     await Promise.all([database.query('SELECT 1'), assertRedisSafety(redis)]);
     // An unmigrated bootstrap has no sales. Once present, every configuration must match.
@@ -42,7 +42,7 @@ export async function startService(service: 'api' | 'worker') {
         recoveredRuns.set(sale.id, run);
       }
     }
-  };
+  });
   const app = createHealthServer(probe);
   registerOperations(app, metrics, config.httpConcurrency, async () => {
     let backlog = 0, pending = 0, delayed = 0;

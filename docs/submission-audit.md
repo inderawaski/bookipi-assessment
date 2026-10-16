@@ -2,7 +2,7 @@
 
 Audit source: [DEV-5 behavioral contract](https://linear.app/bookipi-assessment/issue/DEV-5/deliver-the-high-throughput-flash-sale-assessment) and [DEV-22 acceptance criteria](https://linear.app/bookipi-assessment/issue/DEV-22/perform-final-requirement-audit-and-submission-rehearsal), reviewed 16 October 2026 (Asia/Jakarta).
 
-**Submission acceptance remains pending.** Two prescribed 100k bursts have invalid dispatch evidence, human checkpoints A–G and the final walkthrough have no recorded human sign-off. Automated passing tests cannot close those gaps. This audit adds no authentication, product entity, quantity option or other business behavior. It does not authorize external submission.
+**Submission acceptance remains pending on performance.** In the final `9a79117` evidence, only one of five prescribed workloads met dispatch/accounting criteria; the larger-stock one-worker retry also left 168 of 321 admissions unfinished at the five-minute drain limit. Historical DEV-19 measurements remain separate. On 16 October 2026 the user confirmed in this chat that all human checkpoints A–G and the final human review had already been approved. DEV-5 now contains the approved uncertainty contract revision, matching the implemented public response. Neither the performance requirements nor external sending were waived by that confirmation. This audit adds no authentication, product entity, quantity option or other business behavior. It does not authorize external submission.
 
 ## Requirement traceability
 
@@ -29,7 +29,7 @@ Paths below are repository-relative. Integration test names and detailed crash b
 | Actual dispatch <=1s; separate response/drain, load boundaries/failures | Generator OS write timestamps, accounting validity checks; `experiments.mjs` | Harness real TCP timing tests; opening/closing/worker-crash/repeated scenarios; failure suite | [Harness guide](../scripts/stress/README.md); invalid attempts remain invalid even if accounting passes |
 | Capacity, latency, resources, rejected/uncertain outcomes and eventual accounting | Stress host/config/resource/result artifacts and report tool | Historical compressed raw artifacts and manifest; final-run SHA/logs/checksums | [Stress results](stress-results.md), [testing measured summary](testing.md#measured-summary); missing durability percentiles/physical fsync latency explicitly unmeasured |
 | Repository URL, README, diagram, rationale, build/run/test instructions, stress summary | [Repository](https://github.com/inderawaski/bookipi-assessment), [README](../README.md), [diagram](architecture.md), [decisions](decisions.md), [testing](testing.md), [recovery](recovery.md), [stress](stress-results.md) | Relative links, Compose config, build, final checks and fresh checkout rehearsal | Ready for human review; local fresh checkout does not verify a remote push |
-| All child criteria and human checkpoints; final review before sending | This audit and receipt/checklist below | Human reviewer must supply evidence and sign-off | **Pending**; no automated or agent execution substitutes for a human |
+| All child criteria and human checkpoints; final review before sending | This audit and receipt/checklist below | Human reviewer must supply evidence and sign-off | User approval confirmed 16 October 2026; performance requirements remain open |
 
 ## Final-commit verification receipt
 
@@ -75,15 +75,17 @@ Historical valid 10k unique dispatch: last write 947.11 ms, 47 eventual orders, 
 
 Bounded admission protects resource use but leaves stock unfilled under saturation. Everysec AOF barriers add acknowledgement and serial worker latency. More APIs/workers helped the measured small comparison; a single Redis admission authority and ingress/generator limits remain. Stress uses a larger proxy budget than the demo. Distributed generators, admission batching with proven write/wait ownership, worker batching, stronger replication and partitioning are future proposals requiring new correctness/measurement evidence. No max PostgreSQL capacity, disk saturation or regional availability is established.
 
-Final reviewer record (leave pending until supplied by a person):
+Final reviewer record:
 
-- Reviewer/date: **pending**.
-- Final SHA/tree and final-run receipt directory: **pending human attachment/review**.
-- Fresh checkout host, project, commands, screenshots, order IDs, restart/stock/replay evidence: **pending**.
-- Child checkpoints A/B/C/D/E/F/G evidence references: **pending**.
-- Five prescribed bursts valid/accounted: **not satisfied by historical evidence; inspect fresh receipt**.
-- Final decision and acknowledged limitations: **pending**.
-- External sending: **not authorized by this ticket**.
+- Reviewer/date: user confirmation in this chat, 16 October 2026 (Asia/Jakarta): “for approval, I silently had approved all of those”.
+- Approved demonstration/evidence revision: `9a79117`; the subsequent readiness fix is verified separately in [verification](verification.md).
+- Evidence: fresh-checkout Docker commands, screenshots, order IDs, restart/stock accounting and delayed/replay evidence in the DEV-22 bundle. The confirmation records approval; it does not invent additional manual steps or screenshots.
+- Child checkpoints A/B/C/D/E/F/G and final human review: approved by the user's confirmation.
+- Five prescribed bursts valid/accounted: not satisfied by the final evidence; performance remains open.
+- Public uncertainty contract: approved revision in DEV-5 dated 16 October 2026; the earlier alignment concern is resolved.
+- External sending: not authorized by this ticket or the checkpoint approval.
+
+Historical automated receipts keep their original pending-human-review fields and checksums. This reviewer record supersedes that historical status without rewriting captured evidence.
 
 ## Implementation review
 

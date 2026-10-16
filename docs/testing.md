@@ -133,7 +133,7 @@ On 16 October 2026, `pnpm lint`, `pnpm typecheck`, `pnpm build`, both demonstrat
 
 ## Human checkpoint G
 
-**Pending; automated checks do not record human approval.** On a fresh checkout, a person should:
+**Approved by user confirmation in this chat on 16 October 2026; see the [reviewer record](submission-audit.md).** The following walkthrough is retained for reproduction:
 
 1. Clone [the source repository](https://github.com/inderawaski/bookipi-assessment) and follow README prerequisites, environment, install/build, infrastructure, migration and pre-opening configuration exactly. Record source revision with `git rev-parse HEAD`, versions, sale ID, UTC times and initial stock.
 2. Open the documented URL, wait for ACTIVE, place an arbitrary identifier, observe PROCESSING then SUCCESS, retry deliberately and confirm duplicate feedback; refresh and confirm the same order.

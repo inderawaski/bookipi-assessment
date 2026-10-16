@@ -43,8 +43,9 @@ Redis crash cases additionally check restart fencing and retained durable admiss
 Pending reclamation in boundary tests uses XAUTOCLAIM with zero idle time after
 confirmed process death; production retains its 60-second safety interval.
 
-Human checkpoint E remains **pending**. A person must inspect this matrix and the
-saved evidence and reproduce at least Redis crash during confirmation
+The user confirmed human checkpoint E approval on 16 October 2026; see the
+[reviewer record](submission-audit.md). For reproduction, inspect this matrix and the
+saved evidence and run at least Redis crash during confirmation
 (`pnpm test:failure -t 'during_wait'`) and worker crash after DB commit
 (`pnpm test:failure -t 'SIGKILL worker at after_commit'`). Automated execution does
 not record human approval.

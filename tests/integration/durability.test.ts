@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
-import { DurableAdmission, admissionKeys, admitPurchase } from '../../packages/redis/src/index.js';
+import { DurableAdmission, admissionKeys, admitPurchase, initializeAdmission } from '../../packages/redis/src/index.js';
 import { confirmationScript } from '../../packages/redis/src/sales/durability-scripts.js';
 import { testServices } from '../services.js';
 
@@ -81,5 +81,58 @@ it('validates matching DB orders and refuses expiring allocation state', async (
     await f.redis.pExpire(f.keys[3], 60000);
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('confirming');
     await expect(f.gate.recover(f.sale, [])).rejects.toThrow('invalid accounting');
+  } finally { f.redis.destroy(); }
+});
+
+it('keeps a validated epoch visible while another replica prepares recovery', async () => {
+  const f = await fixture();
+  let release!: () => void;
+  let entered!: () => void;
+  const paused = new Promise<void>(resolve => { entered = resolve; });
+  const resume = new Promise<void>(resolve => { release = resolve; });
+  const peer = new DurableAdmission(process.env.TEST_REDIS_URL!, 16, 10000, () => {}, async boundary => {
+    if (boundary === 'before_recovery') { entered(); await resume; }
+  });
+  let recovery: Promise<void> | undefined;
+  try {
+    await f.gate.recover(f.sale, []);
+    expect(await f.gate.place(f.sale.id, { identifier: 'person', idempotencyKey: 'key' })).toMatchObject({ phase: 'queued' });
+    const epoch = await f.redis.hGet(f.keys[0], 'recovered_run');
+    recovery = peer.recover(f.sale, []);
+    await paused;
+    expect(await f.redis.hGet(f.keys[0], 'recovered_run')).toBe(epoch);
+    expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('durable');
+    release(); await recovery;
+    expect(await f.redis.hGet(f.keys[0], 'remaining_stock')).toBe('1');
+    expect(await f.redis.xLen(f.keys[4])).toBe(1);
+    expect(await f.redis.hGet(f.keys[0], 'admission_fault')).toBeNull();
+  } finally { release(); await recovery; f.redis.destroy(); }
+}, 15000);
+
+it('fences configuration mismatches atomically without releasing reservations', async () => {
+  const f = await fixture();
+  try {
+    await f.gate.recover(f.sale, []);
+    await f.gate.place(f.sale.id, { identifier: 'person', idempotencyKey: 'key' });
+    await expect(f.gate.recover({ ...f.sale, initialStock: 3 }, [])).rejects.toThrow();
+    expect(await f.redis.hGet(f.keys[0], 'recovered_run')).toBeNull();
+    expect(await f.redis.hGet(f.keys[0], 'remaining_stock')).toBe('1');
+    expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('confirming');
+    await f.gate.recover(f.sale, []);
+    expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('durable');
+  } finally { f.redis.destroy(); }
+});
+
+it('leaves missing pre-sale state configurable after a failed reconciliation', async () => {
+  const f = await fixture();
+  const sale = { ...f.sale, id: randomUUID(), startsAt: new Date(Date.now() + 60000).toISOString(), endsAt: new Date(Date.now() + 120000).toISOString() };
+  const key = admissionKeys(sale.id)[0];
+  try {
+    await expect(f.gate.recover(sale, [])).rejects.toThrow('invalid accounting');
+    expect(await f.redis.exists(key)).toBe(0);
+    await initializeAdmission(f.redis, sale);
+    await f.gate.recover(sale, []);
+    expect(await f.redis.hGet(key, 'recovered_run')).not.toBeNull();
+    expect(await f.redis.hGet(key, 'remaining_stock')).toBe('2');
   } finally { f.redis.destroy(); }
 });

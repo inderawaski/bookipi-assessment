@@ -149,3 +149,39 @@ See [the P00 coverage matrix](integration-coverage.md) for test names and scope.
 API and worker instances run in-process with real service connections; browser tests
 stub HTTP. Deterministic process/network failures and measured stress remain owned
 by DEV-17–DEV-19. The human invariant/real-service checkpoint remains pending.
+
+## Readiness reconciliation race fix
+
+Verified on 16 October 2026 (Asia/Jakarta), Node 22.23.2, pnpm 11.25.0,
+Docker Engine 29.7.2, pinned Redis 7.4.8 and PostgreSQL 18.3:
+
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, both Compose configuration checks and `git diff --check`: passed.
+- `pnpm test`: 70 unit tests and 17 harness tests passed.
+- `pnpm test:integration`: 45 tests passed, including 24 overlapping readiness requests across two APIs and one worker, genuine fault fencing/recovery, peer epoch visibility and resumable missing pre-sale configuration.
+- `pnpm test:failure`: all 26 deterministic crash/network cases passed, preserving restart fencing, AOF confirmation and acknowledged-admission recovery.
+- `pnpm test:browser`: all 22 Chromium cases passed.
+- `STRESS_CONNECTIONS=8 STRESS_MAX_CONNECTIONS=8 STRESS_API_REPLICAS=2 STRESS_WORKER_REPLICAS=3 pnpm test:stress healthy`: passed. All five direct replica probes returned HTTP 200/ready. Eight requests were dispatched by 789.05 ms, all eight became orders, and all accounting/fill/drain invariants passed; drain after responses was 10.25 seconds. This is a startup/purchase smoke, not evidence of 100k/s capacity. The five prescribed capacity scenarios were not rerun for this fix; their outstanding limitations remain open.
+
+The new peer-epoch regression failed against the old recovery path because the
+marker disappeared before Lua execution, then passed after moving configuration
+validation and fencing into one atomic script. Removing in-flight probe sharing
+also made both new helper tests fail; the original implementation was restored
+and the tests passed. Test-only recovery scheduling uses the existing guarded
+constructor callback, with no production fault route or persistence override.
+
+Self-review covered atomic fence visibility across replicas, configuration/expiry
+and corruption failures, integer stock validation, missing-state initialization,
+unchanged same-connection AOF barriers, non-cached readiness, bounded setup retry
+and request cancellation, resource isolation, and unchanged dispatch/boundary
+rules. No unresolved review findings were identified. PostgreSQL health now runs
+authenticated SQL over TCP instead of accepting its temporary initialization
+server. The readiness harness retains every replica's status/error attempts.
+
+Local logs, code checksums and the healthy-run evidence are retained under
+`test-results/readiness-fix/`; the raw stress project is
+`test-results/stress/flash-test-8ded42a4-d697-4033-8b79-04dc726040c3/`.
+Generated artifacts remain ignored so final-commit metadata can be saved without
+changing the commit it identifies. User approval of checkpoints A–G and final
+human review, plus the updated uncertainty contract, are recorded in the
+[submission audit](submission-audit.md). No performance waiver or external
+submission authorization is inferred from those approvals.

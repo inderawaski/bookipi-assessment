@@ -34,7 +34,7 @@ for (const { scenario, connections } of jobs) {
   try {
     docker(['up', '-d', '--build', '--wait', '--scale', `api=${apiReplicas}`, '--scale', `worker=${workerReplicas}`, 'postgres', 'redis', 'api', 'worker', 'proxy']);
     writeFileSync(`${output}/compose.yaml`, docker(['config']));
-    const sources = ['scripts/stress.mjs', 'scripts/stress/case.mjs', 'scripts/stress/generator.mjs', 'scripts/stress/accounting.mjs', 'scripts/stress/experiments.mjs', 'compose.test.yaml', 'compose.stress.yaml', 'deploy/stress-proxy.conf'];
+    const sources = ['scripts/stress.mjs', 'scripts/stress/case.mjs', 'scripts/stress/generator.mjs', 'scripts/stress/accounting.mjs', 'scripts/stress/experiments.mjs', 'scripts/stress/readiness.mjs', 'compose.test.yaml', 'compose.stress.yaml', 'deploy/stress-proxy.conf'];
     writeFileSync(`${output}/sources.json`, JSON.stringify(Object.fromEntries(sources.map(path => [path, readFileSync(path, 'utf8')])), null, 2));
     writeFileSync(`${output}/host.json`, JSON.stringify({ commit, dirty, node: process.version, platform: platform(), release: release(), cpus: cpus(), memoryBytes: totalmem(), apiReplicas, workerReplicas, runningContainers: spawnSync('docker', ['ps', '--format', '{{.Names}} {{.Status}}'], { encoding: 'utf8' }).stdout, dockerVersion: spawnSync('docker', ['version'], { encoding: 'utf8' }).stdout, dockerInfo: spawnSync('docker', ['info'], { encoding: 'utf8' }).stdout,
       limits: spawnSync('sh', ['-c', 'ulimit -a'], { encoding: 'utf8' }).stdout,
@@ -56,6 +56,7 @@ for (const { scenario, connections } of jobs) {
       TEST_PROJECT: project, TEST_DATABASE_URL: `postgresql://flash_test:test_only@127.0.0.1:${port('postgres', '5432')}/flash_test`,
       TEST_REDIS_URL: `redis://127.0.0.1:${port('redis', '6379')}`, STRESS_API: `http://127.0.0.1:${port('proxy', '80')}`,
       STRESS_API_ENDPOINTS: JSON.stringify(Array.from({ length: apiReplicas }, (_, i) => `http://127.0.0.1:${port('api', '3000', i + 1)}`)),
+      STRESS_WORKER_ENDPOINTS: JSON.stringify(Array.from({ length: workerReplicas }, (_, i) => `http://127.0.0.1:${port('worker', '3001', i + 1)}`)),
       STRESS_COMPOSE_ARGS: JSON.stringify(args), STRESS_WORKER: `http://127.0.0.1:${port('worker', '3001')}`, STRESS_COMMIT: commit, STRESS_OUTPUT: output, STRESS_CONNECTIONS: String(connections) } });
     const code = await new Promise(resolve => { child.once('error', () => resolve(1)); child.once('exit', code => resolve(code)); });
     const result = JSON.parse(readFileSync(`${output}/result.json`, 'utf8'));

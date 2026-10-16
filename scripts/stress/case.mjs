@@ -7,6 +7,7 @@ import { createRedisConnection, assertRedisSafety, initializeAdmission, admissio
 import { burst } from './generator.mjs';
 import { scenarios, validateFinal, admissionsWithinWindow } from './accounting.mjs';
 import { waitForRedisTime, crashWorker, pollStatus } from './experiments.mjs';
+import { waitForReadiness } from './readiness.mjs';
 
 const scenario = scenarios.find(s => s.name === process.argv[2]);
 if (!scenario || !/^flash-test-[0-9a-f-]{36}$/.test(process.env.TEST_PROJECT ?? '') || new URL(process.env.TEST_DATABASE_URL).pathname !== '/flash_test') throw new Error('Use pnpm test:stress for isolated test data');
@@ -29,11 +30,11 @@ try {
   const sale = await persistSale(database, { id: randomUUID(), startsAt: new Date(now + 10000).toISOString(), endsAt: new Date(now + (scenario.boundary ? 20000 : 3600000)).toISOString(), initialStock: scenario.stock });
   artifact.sale = sale;
   await initializeAdmission(redis, sale);
-  // Explicit probes discover this sale before the burst; neither places an order.
-  for (const base of [process.env.STRESS_API, process.env.STRESS_WORKER]) {
-    const ready = await fetch(`${base}/health/ready`, { signal: AbortSignal.timeout(10000) });
-    if (!ready.ok) throw new Error('Service reconciliation failed');
-  }
+  // Discover the new sale on every replica before starting the dispatch clock.
+  artifact.readinessAttempts = [];
+  const apiEndpoints = JSON.parse(process.env.STRESS_API_ENDPOINTS || JSON.stringify([process.env.STRESS_API]));
+  const workerEndpoints = JSON.parse(process.env.STRESS_WORKER_ENDPOINTS || JSON.stringify([process.env.STRESS_WORKER]));
+  await waitForReadiness([...apiEndpoints, ...workerEndpoints], { onAttempt: attempt => artifact.readinessAttempts.push(attempt) });
   artifact.apiReplicaMetricsBefore = await Promise.all(JSON.parse(process.env.STRESS_API_ENDPOINTS || '[]').map(metrics));
   artifact.metricsBefore = { api: await metrics(process.env.STRESS_API), worker: await metrics(process.env.STRESS_WORKER) };
   artifact.polls = [];

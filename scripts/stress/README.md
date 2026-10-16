@@ -104,8 +104,8 @@ boundaries remain covered by `pnpm test:failure`.
 The report command takes explicit isolated project paths and writes compressed
 copies of **all** their files to `docs/evidence/dev19`, with an uncompressed SHA-256
 manifest and compact summaries. Include failed attempts. Raw request timestamps
-remain in `result.json.gz`; decompress with `gzip -dc`. Human checkpoint F remains
-pending until a reviewer confirms generator validity and the measured results.
+remain in `result.json.gz`; decompress with `gzip -dc`. The user confirmed human checkpoint F approval on 16 October 2026; see the
+[reviewer record](../../docs/submission-audit.md). Invalid dispatch attempts remain invalid performance evidence.
 
 The opening case uses 16 distinct buyers/units so pre-opening requests do not
 occupy every bounded admission slot for the entire post-opening half. This changes
@@ -122,3 +122,7 @@ After a large socket attempt, allow the host's ephemeral ports/TIME_WAIT state t
 recover before comparing replicas. For sufficient-stock replica calibration,
 `STRESS_CONNECTIONS=100 STRESS_MAX_CONNECTIONS=100` avoids allocating thousands
 of idle sockets; keep that setting identical across the replica comparisons.
+
+## Readiness before dispatch
+
+After initializing a new sale, setup explicitly checks every API and worker replica through its direct endpoint. A shared ten-second setup deadline bounds retries of unavailable or failed responses; HTTP success must include `status: ready`. Each endpoint, timestamp, HTTP status and returned readiness state/error is retained in `result.json` as `readinessAttempts`. Permanent failures remain invalid setup attempts with endpoint diagnostics. This wait places no purchases, changes no sale times and does not relax the one-second dispatch or boundary-straddle checks. PostgreSQL container health checks use authenticated TCP SQL so its temporary initialization server cannot prematurely satisfy application readiness.

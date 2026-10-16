@@ -1,7 +1,7 @@
 import { normalizeIdentifier, normalizePurchase, type PurchaseInput, type PurchaseResponse } from '@flash/contracts';
 import { createRedisConnection, assertRedisSafety } from '../index.js';
 import { admitPurchase, admissionKeys, type Reservation } from './admission.js';
-import { saleKey, assertAdmissionConfiguration, type AdmissionConfiguration } from './configuration.js';
+import type { AdmissionConfiguration } from './configuration.js';
 import { confirmationScript, recoveryScript } from './durability-scripts.js';
 
 const durable = Symbol('durable admission');
@@ -103,11 +103,13 @@ export class DurableAdmission {
   /** Supply the complete DB order snapshot for this sale; mismatch keeps the restart fence closed. */
   async recover(sale: AdmissionConfiguration, orders: PersistedAdmission[]): Promise<void> {
     await this.own(async redis => {
-      await redis.hDel(saleKey(sale.id), 'recovered_run');
-      await assertAdmissionConfiguration(redis, sale);
       const run = (await redis.info('server')).match(/run_id:([^\r\n]+)/)?.[1];
       if (!run) throw new Error('Missing Redis run ID');
-      await redis.sendCommand(['EVAL', recoveryScript, '5', ...admissionKeys(sale.id), run, JSON.stringify(orders), sale.id]);
+      await this.failpoint?.('before_recovery');
+      // Fencing, configuration validation and reopening are one atomic operation.
+      // A peer cannot observe a valid epoch temporarily removed by this recovery.
+      await redis.sendCommand(['EVAL', recoveryScript, '5', ...admissionKeys(sale.id), run, JSON.stringify(orders), sale.id,
+        String(Date.parse(sale.startsAt)), String(Date.parse(sale.endsAt)), String(sale.initialStock)]);
       await this.barrier(redis);
     });
   }
