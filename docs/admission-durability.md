@@ -1,5 +1,8 @@
 # Admission durability protocol (DEV-10)
 
+Public response semantics were subsequently revised: internal confirming is exposed as NOT_ORDERED/confirmation_uncertain with same-key retry. See [current public contract](public-contract.md). The durability and worker guarantees below remain unchanged.
+
+
 Redis is pinned to **7.4.8**, AOF everysec, noeviction, persistent storage. Guarantees assume intact storage and correct fsync behavior. `admitPurchase` returns internal, potentially volatile reservation evidence only. API placement must use `DurableAdmission.place`; identifier lookup must use `lookup`; workers must obtain `confirmForWorker` evidence matching the message request key and stream ID before their PostgreSQL transaction. No worker order writer or public purchase route exists yet (DEV-11/DEV-13).
 
 ## Confirmation

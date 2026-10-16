@@ -44,11 +44,15 @@ describe('state safety', () => {
     expect(reconcileOrder(queued, rejected)).toEqual(queued);
     expect(reconcileOrder(success, queued)).toEqual(success);
     expect(reconcileOrder(queued, { status: 'NOT_ORDERED' })).toEqual(queued);
+    expect(reconcileOrder(queued, { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' })).toEqual(queued);
+    expect(reconcileOrder(success, { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' })).toEqual(success);
+    expect(reconcileOrder(queued, { status: 'PROCESSING', phase: 'confirming' })).toEqual(queued);
     expect(reconcileOrder({ status: 'NOT_ORDERED' }, { status: 'REJECTED', reason: 'already_placed', existingOrder: success })).toEqual(success);
   });
   it('maps uncertainty separately from definite pre-admission rejection', () => {
     const cases: [PurchaseResponse, number][] = [
       [{ status: 'PROCESSING', phase: 'confirming' }, 202],
+      [{ status: 'NOT_ORDERED', reason: 'confirmation_uncertain' }, 202],
       [{ status: 'SUCCESS', orderId: '1' }, 200],
       ...(['upcoming', 'ended', 'sold_out', 'idempotency_conflict'] as const).map(reason => [{ status: 'REJECTED', reason }, 409] as [PurchaseResponse, number]),
       [{ status: 'REJECTED', reason: 'invalid_input' }, 400],

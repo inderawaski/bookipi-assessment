@@ -12,7 +12,7 @@ function Purchase({ identifier, session, saleOpen }: { identifier: string; sessi
   const order = useOrder(identifier, session);
   return <form id="purchase-form" onSubmit={event => { event.preventDefault(); if (saleOpen || order.uncertain) void order.submit(); }}>
     <button type="submit" disabled={order.sending || (!saleOpen && !order.uncertain)}>
-      {order.sending ? 'Submitting…' : order.uncertain ? 'Retry confirmation' : 'Buy Now'}
+      {order.sending ? 'Submitting…' : 'Buy Now'}
     </button>
     <div role="status" aria-live="polite" aria-atomic="true" className="order-status">
       {order.order.status === 'SUCCESS' && <><h3>SUCCESS</h3><p>Your order is confirmed.</p><p className="order-id">Order {order.order.orderId}</p></>}

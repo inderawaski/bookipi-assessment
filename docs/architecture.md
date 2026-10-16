@@ -45,7 +45,7 @@ Lua isolation is not rollback on arbitrary script errors. The script validates i
 
 Redis AOF uses everysec and a persistent volume. In-memory execution alone is not a successful placement acknowledgement. The API confirms local AOF persistence with WAITAOF after the admission write on its owning connection, checking the returned local confirmation count. Connection pooling/batching must preserve that ordering without blocking unrelated commands behind durability waits.
 
-On confirmation the page can say order placed and PROCESSING. On timeout or lost connection the page remains PROCESSING/confirming; the result is uncertain. The operation may already exist or may subsequently be lost before persistence. AOF everysec without the barrier would not meet the acknowledged-admission guarantee.
+On confirmation the page can say order placed and PROCESSING. On timeout or lost connection the public state is NOT_ORDERED/confirmation_uncertain; the result is uncertain and the existing purchase button permits retry. The operation may already exist or may subsequently be lost before persistence. AOF everysec without the barrier would not meet the acknowledged-admission guarantee.
 
 Lookup and same-key replay cannot bypass confirmation. A worker must also establish the admission record's durability before finalizing its order; reading an entry is not itself durability evidence. A checkpoint write followed by a local barrier can establish an AOF prefix including earlier admission data, but its exact implementation must be proven against the pinned Redis version.
 
@@ -57,7 +57,7 @@ Each operation checks AOF configuration, noeviction and AOF write health. The [c
 
 Redis is pinned to 7.4.8. Its WAITAOF tracks the calling client's write offset: a fresh socket's wait alone cannot confirm another socket's writes. The checkpoint advances that client's offset past the validated reservation and stream writes; confirming that global AOF prefix covers the earlier admission. It neither forces immediate fsync nor establishes replica quorum. Independent sockets avoid head-of-line blocking behind another operation's wait, but disk cadence and connection overhead still limit throughput.
 
-A timeout, disconnect, malformed reply, persistence failure or fence leaves placement PROCESSING/confirming and workers unable to finalize. Gate saturation before send returns retryable busy; lookup saturation remains confirming. A client disconnect does not cancel a potentially sent command or release stock. An already-placed response can carry an existing order still in confirming state; it is not a queued durability acknowledgement.
+A timeout, disconnect, malformed reply, persistence failure or fence leaves internal placement confirming and workers unable to finalize; the API exposes NOT_ORDERED/confirmation_uncertain. Gate saturation before send returns retryable busy; lookup saturation cannot establish confirmation. A client disconnect does not cancel a potentially sent command or release stock. An already-placed response can carry an existing order still unconfirmed; it is not a queued durability acknowledgement.
 
 Evidence lives in [durability unit tests](../packages/redis/src/sales/durability.test.ts), [integration tests](../tests/integration), and [failure tests](../tests/failure). The fsync-suppression regression distinguishes unrelated-connection waits from writer/checkpoint waits; crash cases cover before/after Lua, blocked WAITAOF, confirmation before response, AOF rewrite and network reply loss. See [failure matrix](failure-matrix.md) for exact coverage and its limits.
 
@@ -71,8 +71,8 @@ No post-admission business rejection is defined. Payment failures, fraud checks,
 
 ## Public states and retries
 
-* NOT_ORDERED: initial client state; the current public route also returns it for missing reservations (see the contract gap below).
-* PROCESSING/confirming: admission outcome/durability uncertain.
+* NOT_ORDERED: initial client state; the current public route also returns it for missing reservations (see public uncertainty semantics below).
+* NOT_ORDERED/confirmation_uncertain: admission outcome/durability unresolved; retry the same key. PROCESSING/confirming remains an internal library state.
 * PROCESSING/queued or processing: reservation confirmed, final order pending.
 * PROCESSING/delayed: retry metadata or quarantine exists, including retry backoff and exhaustion; allocation retained.
 * SUCCESS: PostgreSQL order committed.
@@ -84,7 +84,7 @@ A rejected new placement does not change an existing order's successful or pendi
 
 On Redis restart, admission is fenced until persisted reservations/messages and PostgreSQL orders are reconciled. Inventory accounts for both pending reservations and committed allocations without double counting. It must never be reset from initial stock minus committed orders alone.
 
-Absence in a lookup cannot alone establish rejection: an old request could still execute or recovery could be incomplete. A definitive non-admission requires an ordering/fencing proof that original commands cannot arrive later. If that cannot be established, remain confirming/unavailable and require recovery; do not report a fabricated rejection.
+Absence in a lookup cannot alone establish rejection: an old request could still execute or recovery could be incomplete. A definitive non-admission requires an ordering/fencing proof that original commands cannot arrive later. If that cannot be established, preserve internal uncertainty; public NOT_ORDERED is an observation rather than a definitive rejection.
 
 ### Epoch fence and reconciliation
 
@@ -98,9 +98,11 @@ Only successful validation writes the current Redis `INFO server` run_id into `r
 
 The epoch fence prevents execution while recovery is incomplete. It does **not** prove an old API command can never execute after recovery reopens. Consequently there is no definitive-absence proof implemented: the durability library returns confirming (`missing_without_absence_proof`) for missing reservations, including after recovery. A completed admission script's durable rejection applies to that logical request key; it is not proof of absence for every possible in-flight request.
 
-### Known public-lookup contract gap
+### Public uncertainty semantics (user-approved revision)
 
-The current [API allocated lookup](../apps/api/src/sales/routes.ts) converts `missing_without_absence_proof` to NOT_ORDERED after a DB absence check and readiness reconciliation. Its comment treats the current-run fence as an absence proof, but that fence does not prevent a delayed command executing after reopening. This differs from the approved conservative uncertainty contract and the library behavior above. NOT_ORDERED from this route must not be interpreted as proof that an in-flight purchase was rejected. Correcting the route and its observable tests is unresolved runtime work; DEV-20 documents the conflict without changing the approved requirement or implementation. Library-level delayed-admission tests do not prove the public route satisfies it.
+Public NOT_ORDERED means placement is not currently confirmed, not definitive proof of non-admission. The API returns it for a successful empty lookup and adds `reason: "confirmation_uncertain"` for unconfirmed placement or a known reservation awaiting durability. HTTP 202 on an unconfirmed purchase makes no durable acknowledgement. Internal library confirmation remains conservative, and worker authority is unchanged.
+
+The client displays “We couldn’t confirm your order. Try again.” and re-enables the existing Buy Now button. It retains the original request key through empty lookups and retries it even after closure/sellout; polling can discover completion without another click. Confirmed queued/delayed/SUCCESS states never regress to NOT_ORDERED. A lost admission retried after closing or sellout can be rejected. Refresh loses the in-memory key, but identifier uniqueness still prevents double allocation. This approved revision replaces the original public missing-lookup requirement; no new durable store or absence proof is introduced.
 
 Operator commands and bounded replay are in [recovery operations](recovery.md). Do not trim, expire, evict or manually mutate retained keys. Missing-entry reconstruction is a defensive recovery capability, not permission for routine stream deletion.
 

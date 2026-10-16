@@ -37,8 +37,8 @@ test('uncertain delivery retries the same key and recovers to success', async ({
   });
   await page.getByLabel('Your identifier').fill('person');
   await page.getByRole('button', { name: 'Buy Now' }).click();
-  await expect(page.getByText(/Confirmation uncertain/)).toBeVisible();
-  await page.getByRole('button', { name: 'Retry confirmation' }).click();
+  await expect(page.getByText(/We couldn’t confirm your order/)).toBeVisible();
+  await page.getByRole('button', { name: 'Buy Now' }).click();
   await expect(page.getByRole('heading', { name: 'SUCCESS' })).toBeVisible();
   expect(keys).toHaveLength(2); expect(keys[1]).toBe(keys[0]);
 });
@@ -166,10 +166,10 @@ test('automatic lookup resolves uncertain confirmation and clears its warning', 
   await page.route('**/purchases', route => route.abort());
   await page.getByLabel('Your identifier').fill('person');
   await page.getByRole('button', { name: 'Buy Now' }).click();
-  await expect(page.getByText(/Confirmation uncertain/)).toBeVisible();
+  await expect(page.getByText(/We couldn’t confirm your order/)).toBeVisible();
   await page.route('**/order?*', route => route.fulfill({ json: available({ status: 'SUCCESS', orderId: 'confirmed-later' }) }));
   await expect(page.getByText('Order confirmed-later')).toBeVisible();
-  await expect(page.getByText(/Confirmation uncertain/)).toHaveCount(0);
+  await expect(page.getByText(/We couldn’t confirm your order/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Buy Now' })).toBeVisible();
 });
 
@@ -182,5 +182,32 @@ for (const offset of [-86400000, 86400000]) {
     await page.route('**/purchases', route => route.fulfill({ status: 409, json: { status: 'REJECTED', reason: 'ended' } }));
     await page.getByRole('button', { name: 'Buy Now' }).click();
     await expect(page.getByText('The sale has ended.')).toBeVisible();
+  });
+}
+
+for (const outcome of ['NOT_ORDERED', 'lost-response']) {
+  test(`unconfirmed ${outcome} preserves retry key through empty lookup and closure`, async ({ page }) => {
+    await setup(page);
+    const keys: string[] = [];
+    await page.route('**/purchases', async route => {
+      keys.push(route.request().postDataJSON().idempotencyKey);
+      if (keys.length === 2) return route.fulfill({ status: 429, json: { status: 'REJECTED', reason: 'busy' } });
+      if (keys.length > 2) return route.fulfill({ json: { status: 'PROCESSING', phase: 'queued' } });
+      if (outcome === 'lost-response') return route.abort();
+      return route.fulfill({ status: 202, json: { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' } });
+    });
+    await page.getByLabel('Your identifier').fill('retry-person');
+    await page.getByRole('button', { name: 'Buy Now' }).click();
+    await expect(page.getByText('We couldn’t confirm your order. Try again.')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'PROCESSING' })).toHaveCount(0);
+    await page.route('**/api/sales/flash-sale', route => route.fulfill({ json: { ...openSale(), status: 'ENDED' } }));
+    await expect(page.getByText('ENDED', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('We couldn’t confirm your order. Try again.')).toBeVisible();
+    await page.getByRole('button', { name: 'Buy Now' }).click();
+    await expect(page.getByText('The service is busy. Please try again.')).toBeVisible();
+    await page.getByRole('button', { name: 'Buy Now' }).click();
+    await expect(page.getByRole('heading', { name: 'PROCESSING' })).toBeVisible();
+    expect(keys).toHaveLength(3); expect(new Set(keys).size).toBe(1);
+    await expect(page.getByText('We couldn’t confirm your order. Try again.')).toHaveCount(0);
   });
 }

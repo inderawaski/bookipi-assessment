@@ -80,3 +80,31 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
     expect(await redis.xLen(keys[4])).toBe(1);
   } finally { await app.close(); redis.destroy(); await database.end(); }
 }, 20000);
+
+it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or duplicating its allocation', async () => {
+  const { database, redis } = testServices();
+  await redis.connect();
+  const sale = { id: randomUUID(), startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 60000).toISOString(), initialStock: 1 };
+  let loseConfirmation = false;
+  const admission = new DurableAdmission(process.env.TEST_REDIS_URL!, 16, 3000, undefined, async boundary => {
+    if (loseConfirmation && boundary === 'before_durability') throw new Error('Injected confirmation loss');
+  });
+  const app = createHealthServer(async () => {});
+  registerSaleRoutes(app, { database, redis, admission, probe: async () => { await database.query('SELECT 1'); } });
+  try {
+    await migrate(database); await persistSale(database, sale);
+    const keys = admissionKeys(sale.id);
+    await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
+    await admission.recover(sale, []);
+    loseConfirmation = true;
+    const post = () => app.inject({ method: 'POST', url: `/sales/${sale.id}/purchases`, payload: { identifier: 'person', idempotencyKey: 'same-key' } });
+    expect((await post()).json()).toEqual({ status: 'NOT_ORDERED', reason: 'confirmation_uncertain' });
+    expect((await app.inject(`/sales/${sale.id}/order?identifier=person`)).json()).toEqual({ status: 'AVAILABLE', order: { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' } });
+    expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
+    loseConfirmation = false;
+    expect((await post()).json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
+    expect(await redis.xLen(keys[4])).toBe(1);
+    expect(await redis.hLen(keys[3])).toBe(1);
+    expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
+  } finally { await app.close(); redis.destroy(); await database.end(); }
+}, 20000);

@@ -1,6 +1,6 @@
 # Public sale contract (DEV-8 / checkpoint A)
 
-These are shared types, JSON Schemas and pure state rules in `@flash/contracts`, not live endpoints. DEV-13 implements transport and DEV-9/10 implement atomic admission and durability. Checkpoint A is **pending human review** of these examples before admission implementation; no approval is implied by this commit.
+Shared types, JSON Schemas and state rules live in `@flash/contracts`; the API implements these routes. The user-approved uncertainty revision below supersedes the original requirement that all unconfirmed public outcomes use PROCESSING. Historical checkpoint records are unchanged.
 
 ## Routes and envelopes
 
@@ -22,7 +22,7 @@ Sale example: `{"saleId":"sale","startsAt":"2026-10-15T00:00:00Z","endsAt":"2026
 
 | Situation | HTTP | Body |
 | --- | --- | --- |
-| Admission may have executed; durability/outcome unresolved | 202 | `{"status":"PROCESSING","phase":"confirming"}` |
+| Admission may have executed; durability/outcome unresolved | 202 | `{"status":"NOT_ORDERED","reason":"confirmation_uncertain"}` |
 | Reserved and local AOF durability established, awaiting worker | 202 | `{"status":"PROCESSING","phase":"queued"}` |
 | Retry/recovery/manual remediation needed | 202 | `{"status":"PROCESSING","phase":"delayed"}` |
 | Persisted order | 200 | `{"status":"SUCCESS","orderId":"order-1"}` |
@@ -36,9 +36,11 @@ Sale example: `{"saleId":"sale","startsAt":"2026-10-15T00:00:00Z","endsAt":"2026
 
 No creation claim is made for duplicates or replays. Same sale/key + same normalized identifier returns or reconciles its original outcome (including rejection); changed identifier conflicts. Keys are opaque and case-sensitive, scoped by normalized sale ID, bound atomically to payload/outcome and retained for the sale's lifetime, including recovery/replay. Pre-admission busy/unavailable is not a bound admission outcome and may be retried with the same key. Key checks precede identifier duplicate and time/stock checks. New key + allocated identifier reports `already_placed` with existing processing/success status.
 
-Lookup returns HTTP 200 `{"status":"AVAILABLE","order":{"status":"NOT_ORDERED"}}` only when authoritative sources establish absence. It returns PROCESSING or SUCCESS inside `order` when established. During outages, an established durable order may still return SUCCESS; otherwise use HTTP 503 `{"status":"UNAVAILABLE","reason":"unavailable"}`. Never infer absence from a failed read or Redis absence while durable/recovery state is unresolved. Lookup invalid input/unknown sale uses 400/404 REJECTED as above. Sale dependency outages also use 503 UNAVAILABLE.
+Lookup returns HTTP 200 `{"status":"AVAILABLE","order":{"status":"NOT_ORDERED"}}` when PostgreSQL has no order and successful readiness plus Redis lookup observes no reservation. This means no placement is currently confirmed, not proof that an older purchase cannot execute later. A known reservation whose durability cannot be confirmed returns `NOT_ORDERED` with `reason: "confirmation_uncertain"`. Confirmed reservations return PROCESSING and committed orders return SUCCESS. Failed database/readiness reads return HTTP 503 UNAVAILABLE; an existing PostgreSQL order remains readable without Redis. Input/unknown-sale errors use 400/404 REJECTED. Sale dependency outages use 503 UNAVAILABLE.
 
-A timeout after possible execution is **never** ordinary busy/unavailable rejection. Keep the key and reconcile; no new logical placement or released stock. Internal progression is unresolved → reserved → durable → persisted; unresolved may become rejected only after definitive non-admission evidence. Reserved/durable/persisted never transition to rejected. Queued acknowledgement and worker persistence both require confirmed local AOF durability. Infrastructure retry exhaustion changes processing phase to delayed, never revokes allocation.
+An unconfirmed purchase returns HTTP 202 `{"status":"NOT_ORDERED","reason":"confirmation_uncertain"}`. It is neither a durable acknowledgement nor a definitive admission rejection. An already-placed response may carry this same state in `existingOrder` until confirmation succeeds. Redis library states remain internal PROCESSING/confirming; workers still require durability evidence before committing.
+
+A timeout after possible execution is **never** ordinary busy/unavailable rejection. Keep the same key and allow another click on the existing Buy Now button, including after closing/sellout to resolve an earlier attempt. Display “We couldn’t confirm your order. Try again.” Continue polling; an empty lookup does not clear the retry key or warning. Transport errors use the same behavior. After a definitive response or confirmed allocation, clear the key. Refresh loses it; identifier uniqueness still protects a fresh-key submission from double allocation. If unconfirmed admission was lost, retry may be rejected by the current window/stock checks. No stock is released. Internal progression is unresolved → reserved → durable → persisted; unresolved may become rejected only after definitive non-admission evidence. Reserved/durable/persisted never transition to rejected. Queued acknowledgement and worker persistence both require confirmed local AOF durability. Infrastructure retry exhaustion changes processing phase to delayed, never revokes allocation.
 
 ## Identity and operational bounds
 
@@ -48,13 +50,13 @@ Shared limits: 16,384-byte JSON body; 8,192-byte encoded request target; normali
 
 ## Client stale-response rule
 
-Keep order state separately from the latest submission outcome. `reconcileOrder` preserves SUCCESS against delayed PROCESSING/NOT_ORDERED/rejection, and PROCESSING against stale absence or a new rejected placement. `already_placed` reconciles its nested existing order. Lookup UNAVAILABLE retains the last known state with a separate connectivity indicator. Phase changes among processing states are informational and can occur during recovery.
+Keep order state separately from the latest submission outcome. `reconcileOrder` preserves SUCCESS against delayed PROCESSING/NOT_ORDERED/rejection, and PROCESSING against stale absence or a new rejected placement. `already_placed` reconciles its nested existing order. Lookup UNAVAILABLE retains the last known state with a separate connectivity indicator. Queued/delayed states also resist a stale confirming phase. Phase changes between queued and delayed remain informational.
 
 Every request must capture normalized sale/identifier and a local increasing request generation. Ignore responses for a different active identity or older generation; clear displayed state on identity change. Apply reconciliation only to matching identity. A rejection must remain visible as the latest attempt outcome without displaying an existing order as failed. Tests exercise schema boundaries, Unicode, idempotency, HTTP classification, time boundaries and monotonic allocation. Real Redis atomicity and outage behavior remain integration work in dependent issues.
 
 ## Live API (DEV-13)
 
-The routes above are now registered by the API service. Strict structural validation precedes normalization and dependency access. Lookup checks PostgreSQL first: a committed order remains readable when Redis is unavailable. Absence requires a successful database read, readiness/reconciliation, and a fenced Redis confirmation showing no allocation. Failed durability confirmation with an established identifier mapping is `PROCESSING/confirming`; failed reads otherwise return unavailable. Retry or quarantine metadata yields `PROCESSING/delayed`, and never a failed order. Completion hints in Redis cannot produce `SUCCESS`.
+The routes above are now registered by the API service. Strict structural validation precedes normalization and dependency access. Lookup checks PostgreSQL first: a committed order remains readable when Redis is unavailable. An empty observation requires a successful database read, readiness/reconciliation, and Redis lookup showing no allocation. These checks do not exclude delayed commands. Failed durability confirmation with an established identifier mapping is `NOT_ORDERED/confirmation_uncertain`; failed reads otherwise return unavailable. Retry or quarantine metadata yields `PROCESSING/delayed`, and never a failed order. Completion hints in Redis cannot produce `SUCCESS`.
 
 Set optional `WEB_ORIGIN` to an exact HTTP(S) origin (no trailing slash) for a separately hosted frontend. Same-origin proxy requests need no CORS setting. Only that origin receives CORS headers; preflight permits GET/POST with Content-Type. Automatic request logging is disabled to keep identifiers in request targets out of logs, and errors use fixed public envelopes without raw input. The API enforces the 8 KiB request target and 16 KiB body limits.
 

@@ -60,9 +60,9 @@ it('preserves every admission rejection, uncertain result and duplicate state', 
     place.mockResolvedValue(duplicate);
     lookup.mockResolvedValue({ status: 'confirming', diagnostic: 'durability_unavailable' });
     hGet.mockResolvedValue('bound-key');
-    expect((await submit()).json()).toEqual(duplicate);
+    expect((await submit()).json()).toEqual({ ...duplicate, existingOrder: { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' } });
     place.mockResolvedValue({ status: 'PROCESSING', phase: 'confirming' });
-    expect((await submit()).json()).toEqual({ status: 'PROCESSING', phase: 'confirming' });
+    expect((await submit()).json()).toEqual({ status: 'NOT_ORDERED', reason: 'confirmation_uncertain' });
   } finally { await app.close(); }
 });
 
@@ -77,5 +77,21 @@ it('accounts fixed purchase outcomes without identifier labels', async () => {
     const result = metrics.render();
     for (const name of ['admitted', 'uncertain', 'sold_out', 'invalid_input']) expect(result).toContain(`flash_purchase_${name}_total 1\n`);
     expect(result).not.toContain('private-identifier');
+  } finally { await app.close(); }
+});
+
+it('empty lookup is an observation and an unconfirmed submission can resolve on replay', async () => {
+  const { app, place, query } = fixture();
+  const payload = { identifier: 'person', idempotencyKey: 'same-key' };
+  try {
+    place.mockResolvedValue({ status: 'PROCESSING', phase: 'confirming' });
+    const first = await app.inject({ method: 'POST', url: '/sales/sale/purchases', payload });
+    expect(first.statusCode).toBe(202);
+    expect(first.json()).toEqual({ status: 'NOT_ORDERED', reason: 'confirmation_uncertain' });
+    expect((await app.inject('/sales/sale/order?identifier=person')).json()).toEqual({ status: 'AVAILABLE', order: { status: 'NOT_ORDERED' } });
+    query.mockImplementation(async sql => ({ rows: sql.includes('flash_sale ORDER') ? [{ id: 'sale', starts_at: new Date(0), ends_at: new Date('2099-01-01'), initial_stock: 2 }] : [{ id: 'committed-later' }] }));
+    const replay = await app.inject({ method: 'POST', url: '/sales/sale/purchases', payload });
+    expect(replay.json()).toEqual({ status: 'SUCCESS', orderId: 'committed-later' });
+    expect(place.mock.calls).toEqual([['sale', { saleId: 'sale', ...payload }], ['sale', { saleId: 'sale', ...payload }]]);
   } finally { await app.close(); }
 });

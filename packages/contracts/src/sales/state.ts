@@ -1,11 +1,12 @@
 export type ProcessingOrder = { status: 'PROCESSING'; phase: 'confirming' | 'queued' | 'delayed' };
 export type SuccessfulOrder = { status: 'SUCCESS'; orderId: string };
 export type AllocatedOrder = ProcessingOrder | SuccessfulOrder;
-export type OrderState = { status: 'NOT_ORDERED' } | AllocatedOrder;
+export type UnconfirmedOrder = { status: 'NOT_ORDERED'; reason: 'confirmation_uncertain' };
+export type OrderState = { status: 'NOT_ORDERED'; reason?: 'confirmation_uncertain' } | AllocatedOrder;
 export type RejectionReason = 'upcoming' | 'ended' | 'sold_out' | 'invalid_input' | 'idempotency_conflict' | 'busy' | 'unavailable' | 'not_found';
-export type PurchaseResponse = AllocatedOrder
+export type PurchaseResponse = AllocatedOrder | UnconfirmedOrder
   | { status: 'REJECTED'; reason: RejectionReason }
-  | { status: 'REJECTED'; reason: 'already_placed'; existingOrder: AllocatedOrder };
+  | { status: 'REJECTED'; reason: 'already_placed'; existingOrder: AllocatedOrder | UnconfirmedOrder };
 export type LookupResponse = { status: 'AVAILABLE'; order: OrderState }
   | { status: 'UNAVAILABLE'; reason: 'unavailable' }
   | { status: 'REJECTED'; reason: 'invalid_input' | 'not_found' };
@@ -26,7 +27,7 @@ export function isAdmissionOpen(startsAtMs: number, endsAtMs: number, redisNowMs
 }
 
 export function purchaseHttpStatus(response: PurchaseResponse): number {
-  if (response.status === 'PROCESSING') return 202;
+  if (response.status === 'PROCESSING' || response.status === 'NOT_ORDERED') return 202;
   if (response.status === 'SUCCESS') return 200;
   switch (response.reason) {
     case 'invalid_input': return 400;
@@ -54,6 +55,7 @@ export function reconcileOrder(current: OrderState, incoming: OrderState | Purch
     return incoming.reason === 'already_placed' ? reconcileOrder(current, incoming.existingOrder) : current;
   }
   if (current.status === 'SUCCESS') return current;
-  if (incoming.status === 'NOT_ORDERED' && current.status === 'PROCESSING') return current;
+  if (current.status === 'PROCESSING' && (incoming.status === 'NOT_ORDERED' ||
+      (current.phase !== 'confirming' && incoming.status === 'PROCESSING' && incoming.phase === 'confirming'))) return current;
   return incoming;
 }

@@ -40,8 +40,11 @@ export function useOrder(identifier: string, session: Session) {
           if (result.status === 'AVAILABLE') {
             session.checked = true;
             session.order = reconcileOrder(session.order, result.order);
-            if (result.order.status !== 'NOT_ORDERED' && session.uncertain) {
-              session.uncertain = false; session.message = '';
+            if ((result.order.status === 'SUCCESS' || (result.order.status === 'PROCESSING' && result.order.phase !== 'confirming')) && session.uncertain) {
+              session.uncertain = false; session.key = undefined; session.message = '';
+            }
+            if (result.order.status === 'NOT_ORDERED' && result.order.reason === 'confirmation_uncertain' && session.order.status === 'NOT_ORDERED') {
+              session.uncertain = true; session.message = 'We couldn’t confirm your order. Try again.';
             }
             session.lookupMessage = '';
           } else session.lookupMessage = result.status === 'UNAVAILABLE' ? 'Order status unavailable. Reconnecting…' : rejections[result.reason];
@@ -67,15 +70,19 @@ export function useOrder(identifier: string, session: Session) {
     try {
       const result = await placeOrder(identifier, session.key);
       session.order = reconcileOrder(session.order, result);
-      session.uncertain = false;
+      const observed = result.status === 'REJECTED' && result.reason === 'already_placed' ? result.existingOrder : result;
+      const confirmed = session.order.status === 'SUCCESS' || (session.order.status === 'PROCESSING' && session.order.phase !== 'confirming');
+      const retryBlocked = session.uncertain && result.status === 'REJECTED' && (result.reason === 'busy' || result.reason === 'unavailable');
+      session.uncertain = !confirmed && (retryBlocked || observed.status === 'NOT_ORDERED' || (observed.status === 'PROCESSING' && observed.phase === 'confirming'));
       if (result.status === 'REJECTED') {
         session.message = result.reason === 'already_placed' ? 'Already placed: this identifier already has an order.' : rejections[result.reason];
       }
-      session.key = undefined;
+      if (session.uncertain && !retryBlocked) session.message += (session.message ? ' ' : '') + 'We couldn’t confirm your order. Try again.';
+      if (!session.uncertain) session.key = undefined;
     } catch {
       // Delivery may have reached Redis. Only replay this key; never guess rejection.
       session.uncertain = true;
-      session.message = 'Confirmation uncertain. We are checking your order. Retry confirmation safely with the same request.';
+      session.message = 'We couldn’t confirm your order. Try again.';
     } finally {
       session.sending = false; lookupVersion.current++; notify();
     }

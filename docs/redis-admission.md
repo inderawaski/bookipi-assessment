@@ -1,5 +1,8 @@
 # Atomic admission (DEV-9)
 
+Public response semantics were subsequently revised: internal confirming is exposed as NOT_ORDERED/confirmation_uncertain with same-key retry. See [current public contract](public-contract.md). The durability and worker guarantees below remain unchanged.
+
+
 `admitPurchase(connection, saleId, input)` normalizes through the shared contracts and runs one Redis Lua script. Its `reserved` result is internal reservation evidence, **not** a durable acknowledgement. DEV-10 must confirm local AOF durability on the writing connection before acknowledging or persisting an order. Transport errors, unexpected replies and script errors throw `AdmissionUncertainError`; callers must keep these requests unresolved/PROCESSING and reconcile, never infer a rejection or use PostgreSQL inventory as a fallback.
 
 The script owns these keys under `sale:{<UTF-8 sale ID in hex>}:admission` (one Redis Cluster hash slot):
