@@ -17,9 +17,9 @@ function Purchase({ identifier, session, saleOpen }: { identifier: string; sessi
     <div role="status" aria-live="polite" aria-atomic="true" className="order-status">
       {order.order.status === 'SUCCESS' && <><h3>SUCCESS</h3><p>Your order is confirmed.</p><p className="order-id">Order {order.order.orderId}</p></>}
       {order.order.status === 'PROCESSING' && <><h3>PROCESSING</h3><p>{order.order.phase === 'confirming'
-        ? 'Confirmation is still pending. Your request may have been placed; we are checking its durability.'
-        : order.order.phase === 'delayed' ? 'Order placed. Processing is delayed; your reservation remains held. We will keep checking.'
-          : 'Order placed. Waiting for processing to complete.'}</p></>}
+        ? 'Confirmation is still pending. Your request may have been placed; we are checking its status.'
+        : order.order.phase === 'delayed' ? 'Reservation received. Processing is delayed. We will keep checking.'
+          : 'Reservation received. Waiting for order confirmation.'}</p></>}
       {order.order.status === 'NOT_ORDERED' && !order.uncertain && <p>{order.checked ? 'No order found for this identifier.' : 'Checking existing order…'}</p>}
       {order.sending && <p>Sending your request…</p>}
       {order.message && <p>{order.message}</p>}

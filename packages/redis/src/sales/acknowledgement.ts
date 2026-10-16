@@ -2,30 +2,29 @@ import { normalizeIdentifier, normalizePurchase, type PurchaseInput, type Purcha
 import { createRedisConnection, assertRedisSafety } from '../index.js';
 import { admitPurchase, admissionKeys, type Reservation } from './admission.js';
 import type { AdmissionConfiguration } from './configuration.js';
-import { confirmationScript, recoveryScript } from './durability-scripts.js';
+import { confirmationScript, recoveryScript } from './state-scripts.js';
 
-const durable = Symbol('durable admission');
-/** Only a successful durability confirmation can issue this evidence. Never persist this process-local token. */
-export type DurableReservation = Reservation & { readonly [durable]: true };
+const validated = Symbol('validated admission');
+/** Validates current primary state only; this token is not disk/replica durability evidence. */
+export type ValidatedReservation = Reservation & { readonly [validated]: true };
 export interface PersistedAdmission { orderId?: string; identifier: string; admittedAtMs: number }
 export type Confirmation =
-  | { status: 'durable'; reservation: DurableReservation }
-  | { status: 'confirming'; diagnostic: 'missing_without_absence_proof' | 'durability_unavailable' };
+  | { status: 'present'; reservation: ValidatedReservation }
+  | { status: 'confirming'; diagnostic: 'missing_without_absence_proof' | 'admission_unavailable' };
 class CapacityError extends Error {}
 type Connection = ReturnType<typeof createRedisConnection>;
 
 /** One operation per socket, bounded concurrency, no waiting queue or automatic replay. */
-export class DurableAdmission {
+export class RedisAdmission {
   private active = 0;
   constructor(private readonly url: string, private readonly concurrency = 16, private readonly timeoutMs = 3000,
-    private readonly observeBarrier: (seconds: number) => void = () => {},
     private readonly failpoint?: (boundary: string) => Promise<void>) {
     if (failpoint && process.env.NODE_ENV !== 'test') throw new Error('Failpoints require test mode');
-    if (!Number.isSafeInteger(concurrency) || concurrency < 1 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Invalid durability limits');
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Invalid admission limits');
   }
   private async own<T>(operation: (redis: Connection) => Promise<T>): Promise<T> {
-    if (this.active >= this.concurrency) throw new CapacityError('Durability capacity exhausted');
-    const redis = createRedisConnection(this.url, 'durability', this.timeoutMs);
+    if (this.active >= this.concurrency) throw new CapacityError('Admission capacity exhausted');
+    const redis = createRedisConnection(this.url, 'admission', this.timeoutMs);
     this.active++;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -36,7 +35,7 @@ export class DurableAdmission {
           return operation(redis); })(),
         new Promise<never>((_, reject) => { timer = setTimeout(() => {
           if (redis.isOpen) redis.destroy();
-          reject(new Error('Durability deadline exceeded'));
+          reject(new Error('Admission deadline exceeded'));
         }, this.timeoutMs); }),
       ]);
     } finally {
@@ -45,24 +44,15 @@ export class DurableAdmission {
       this.active--;
     }
   }
-  private async barrier(redis: Connection) {
-    const started = performance.now();
-    let reply: unknown;
-    try { reply = await redis.sendCommand(['WAITAOF', '1', '0', String(this.timeoutMs)]); }
-    finally { this.observeBarrier((performance.now() - started) / 1000); }
-    if (!Array.isArray(reply) || reply[0] !== 1) throw new Error('Local AOF durability unconfirmed');
-  }
   private async confirm(redis: Connection, saleId: string, identifier: string): Promise<Confirmation> {
+    await this.failpoint?.('before_lookup');
     const reply = await redis.sendCommand(['EVAL', confirmationScript, '5', ...admissionKeys(saleId), identifier, saleId]);
     if (!Array.isArray(reply)) throw new Error('Invalid confirmation reply');
     if (reply.length === 0) return { status: 'confirming', diagnostic: 'missing_without_absence_proof' };
     const [requestKey, timestamp, streamId] = reply;
     if (typeof requestKey !== 'string' || typeof timestamp !== 'string' || !/^\d+$/.test(timestamp) ||
         !Number.isSafeInteger(Number(timestamp)) || typeof streamId !== 'string' || !/^\d+-\d+$/.test(streamId)) throw new Error('Invalid reservation');
-    await this.failpoint?.('before_durability');
-    await this.barrier(redis);
-    await this.failpoint?.('after_durability');
-    return { status: 'durable', reservation: { requestKey, admittedAtMs: Number(timestamp), streamId, [durable]: true } };
+    return { status: 'present', reservation: { requestKey, admittedAtMs: Number(timestamp), streamId, [validated]: true } };
   }
   async place(saleId: string, input: PurchaseInput): Promise<PurchaseResponse> {
     const payload = normalizePurchase(saleId, input);
@@ -71,15 +61,8 @@ export class DurableAdmission {
         await this.failpoint?.('before_send');
         const result = await admitPurchase(redis, payload.saleId, payload);
         await this.failpoint?.('after_send');
-        if (result.status === 'rejected') {
-          await this.barrier(redis);
-          return { status: 'REJECTED', reason: result.reason };
-        }
-        const confirmation = await this.confirm(redis, payload.saleId, payload.identifier).catch(() => ({ status: 'confirming' } as const));
-        if (confirmation.status !== 'durable') {
-          const existingOrder = { status: 'PROCESSING', phase: 'confirming' } as const;
-          return result.status === 'already_placed' ? { status: 'REJECTED', reason: 'already_placed', existingOrder } : existingOrder;
-        }
+        if (result.status === 'rejected') return { status: 'REJECTED', reason: result.reason };
+        await this.failpoint?.('before_acknowledgement');
         const existingOrder = { status: 'PROCESSING', phase: 'queued' } as const;
         return result.status === 'already_placed' ? { status: 'REJECTED', reason: 'already_placed', existingOrder } : existingOrder;
       });
@@ -90,13 +73,13 @@ export class DurableAdmission {
   async lookup(saleId: string, identifier: string): Promise<Confirmation> {
     const sale = normalizeIdentifier(saleId), person = normalizeIdentifier(identifier);
     try { return await this.own(redis => this.confirm(redis, sale, person)); }
-    catch { return { status: 'confirming', diagnostic: 'durability_unavailable' }; }
+    catch { return { status: 'confirming', diagnostic: 'admission_unavailable' }; }
   }
-  /** Worker must call before its DB transaction; a stream entry alone grants no authority. */
-  async confirmForWorker(saleId: string, identifier: string, requestKey: string, streamId: string): Promise<DurableReservation> {
+  /** Validate mappings before the DB transaction; no persistence/replication wait. */
+  async confirmForWorker(saleId: string, identifier: string, requestKey: string, streamId: string): Promise<ValidatedReservation> {
     const result = await this.lookup(saleId, identifier);
-    if (result.status !== 'durable' || result.reservation.requestKey !== requestKey || result.reservation.streamId !== streamId) {
-      throw new Error('Worker admission durability unconfirmed; retain message and reservation');
+    if (result.status !== 'present' || result.reservation.requestKey !== requestKey || result.reservation.streamId !== streamId) {
+      throw new Error('Worker admission validation unconfirmed; retain message and reservation');
     }
     return result.reservation;
   }
@@ -110,7 +93,6 @@ export class DurableAdmission {
       // A peer cannot observe a valid epoch temporarily removed by this recovery.
       await redis.sendCommand(['EVAL', recoveryScript, '5', ...admissionKeys(sale.id), run, JSON.stringify(orders), sale.id,
         String(Date.parse(sale.startsAt)), String(Date.parse(sale.endsAt)), String(sale.initialStock)]);
-      await this.barrier(redis);
     });
   }
 }

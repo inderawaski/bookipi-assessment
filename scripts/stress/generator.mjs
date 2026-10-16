@@ -6,13 +6,13 @@ import { inputs, summarize } from './accounting.mjs';
 
 // Finish fires after headers/body are handed to the OS, after socket acquisition.
 // This is a conservative upper bound on dispatch, not an iteration-start proxy.
-export async function burst(baseUrl, saleId, scenario, { connections = Math.min(scenario.requests, 10000), timeoutMs = 30000, beforeDispatch, onDispatch } = {}) {
+export async function burst(baseUrl, saleId, scenario, { connections = Math.min(scenario.requests, 10000), timeoutMs = 30000, beforeDispatch, onDispatch, dispatchWindowMs = scenario.dispatchWindowMs ?? 1000, scheduleWindowMs = scenario.scheduleWindowMs ?? dispatchWindowMs * 0.9 } = {}) {
   const url = new URL(baseUrl);
   if (url.protocol !== 'http:') throw new Error('Isolated harness requires HTTP');
   if (!Number.isInteger(connections) || connections < 1 || connections > scenario.requests) throw new Error('Connections must be between 1 and offered requests');
   const sockets = [];
   const agent = new http.Agent({ keepAlive: true, maxSockets: connections, maxFreeSockets: connections });
-  const records = inputs(scenario).map((input, index) => ({ index, input, scheduledMs: index * 900 / scenario.requests }));
+  const records = inputs(scenario).map((input, index) => ({ index, input, scheduledMs: index * scheduleWindowMs / scenario.requests }));
   const loop = monitorEventLoopDelay({ resolution: 10 });
   const cpu = process.cpuUsage();
   const started = performance.now();
@@ -78,12 +78,12 @@ export async function burst(baseUrl, saleId, scenario, { connections = Math.min(
       if (cursor < records.length) await delay(1);
     }
     await Promise.all(tasks);
-    return { ...summarize(records, scenario.requests), records, elapsedMs: performance.now() - epoch,
+    return { ...summarize(records, scenario.requests, dispatchWindowMs), records, elapsedMs: performance.now() - epoch,
       generator: { connections, preconnectMs: preconnectedAt - started, readyWaitMs: epoch - preconnectedAt, cpuMicros: process.cpuUsage(cpu), resourceUsage: process.resourceUsage(),
         memory: process.memoryUsage(), eventLoopDelayMaxMs: loop.max / 1e6,
         bytesWritten: sockets.reduce((sum, socket) => sum + socket.bytesWritten, 0), bytesRead: sockets.reduce((sum, socket) => sum + socket.bytesRead, 0) } };
   } catch (error) {
-    error.measurement = { ...summarize(records, scenario.requests), records,
+    error.measurement = { ...summarize(records, scenario.requests, dispatchWindowMs), records,
       generator: { connections, cpuMicros: process.cpuUsage(cpu), resourceUsage: process.resourceUsage(), memory: process.memoryUsage() } };
     throw error;
   } finally { loop.disable(); agent.destroy(); for (const socket of sockets) socket.destroy(); }

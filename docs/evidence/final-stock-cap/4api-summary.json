@@ -1,0 +1,71 @@
+[
+  {
+    "project": "flash-test-2a17d377-6b5a-4201-97c0-92da73287bb9",
+    "startedAt": "2026-10-16T16:33:49.877Z",
+    "apiReplicas": 4,
+    "workerReplicas": 1,
+    "redisReplicas": 1,
+    "passed": false,
+    "runStatus": "measurement_failed",
+    "error": "Error: Metrics unavailable\n    at metrics (file:///Users/waski/Vashikovich/bookipi-assessment/scripts/stress/case.mjs:26:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///Users/waski/Vashikovich/bookipi-assessment/scripts/stress/case.mjs:137:34",
+    "settings": {
+      "connections": 10000,
+      "timeoutMs": 30000,
+      "drainTimeoutMs": 300000,
+      "dispatchWindowMs": 1000,
+      "scheduleWindowMs": 900
+    },
+    "validDispatch": true,
+    "dispatchLastMs": 902.3703750000004,
+    "admissions": 100,
+    "orders": 100,
+    "orderLatencyMs": {
+      "p50": 1097.123046875,
+      "p95": 1756.94091796875,
+      "p99": 1782.132080078125
+    },
+    "orderMaxMs": 1783.132080078125,
+    "outcomes": {
+      "PROCESSING:queued": 100,
+      "REJECTED:busy": 5544,
+      "REJECTED:sold_out": 3976,
+      "invalid_response": 380
+    },
+    "httpStatuses": {
+      "202": 100,
+      "429": 5544,
+      "409": 3976,
+      "504": 380
+    },
+    "directApiAdmissions": [
+      32.0,
+      23.0,
+      23.0,
+      22.0
+    ],
+    "admissionsWithinFirstSecond": 100,
+    "lastAdmissionRelativeMs": 987,
+    "invariants": {
+      "noOversell": true,
+      "uniqueAllocations": true,
+      "stockConserved": true,
+      "mappingsMatch": true,
+      "uniqueOrders": true,
+      "drained": true,
+      "ordersMatchAdmissions": true,
+      "acknowledgedPreserved": true,
+      "admissionsWithinWindow": true,
+      "orderLatencyObserved": true,
+      "orderP99UnderTwoSeconds": true,
+      "allOrdersWithinTenSeconds": true,
+      "orderObserverHealthy": true,
+      "filled": true
+    },
+    "queueDrainMs": 194.10370799999873,
+    "proxyTimeoutStages": {
+      "connecting": 380
+    },
+    "proxyMetricsNoLiveUpstreams": true,
+    "directApiMetricSnapshotsAfter": 4
+  }
+]

@@ -2,6 +2,21 @@
 
 This integrates the [authored design](https://linear.app/bookipi-assessment/document/architecturemd-repository-ready-draft-5455c52fe11e) with the implementation for DEV-20. Design guarantees are conditional on the assumptions below; measured capacity is reported separately in [stress results](stress-results.md).
 
+## Final stock protection after admission loss
+
+The user approved a final PostgreSQL stock cap after review reproduced an in-flight
+commit/recovery race. Every application order transaction uses READ COMMITTED and
+locks its flash_sale row, then checks for an existing matching order before counting
+committed orders. New orders cannot exceed initial_stock; matching replay succeeds
+at full capacity. This adds no database operation to Redis acknowledgement.
+
+A capacity conflict is quarantined and sets admission_fault=committed_order_capacity,
+fencing new admissions for operator reconciliation. No reservation is silently
+released. PostgreSQL commits are serialized per sale; the schema remains two tables.
+The [before/after race](admission-loss-crash-race.md) documents the approval and
+regression. This protects final order count, not survival of every acknowledged
+Redis reservation or availability after arbitrary state loss.
+
 ## Scope and components
 
 The platform demonstrates one flash sale for one implicit product. A generic, normalized nonempty identifier identifies a buyer. Each buyer may secure one unit per sale. There is no authentication, payment, shipping, fraud evaluation, product catalogue, or quantity selection.
@@ -17,10 +32,10 @@ flowchart LR
   Config[Pre-sale configuration command] --> PG[(PostgreSQL persistent volume)]
   Config --> Redis[(Redis with AOF everysec)]
   API -->|Atomic Lua: time, identity, stock, reserve, enqueue| Redis
-  API -->|Local AOF durability barrier| Redis
+  Redis -->|Asynchronous replication| Replica[(Read-only Redis replica)]
   API -->|Completed order lookup| PG
   Redis -->|Stream consumer group| Worker[Worker processes]
-  Worker -->|Confirm admission durability| Redis
+  Worker -->|Validate current admission| Redis
   Worker -->|Idempotent order transaction| PG
   Worker -->|Completion status and acknowledgement| Redis
   Operator[Recovery inspection and replay] --> Redis
@@ -41,39 +56,75 @@ Fairness means Redis atomic admission execution order. It does not mean browser 
 
 Lua isolation is not rollback on arbitrary script errors. The script validates inputs/key types before mutation; key ownership and noeviction reduce predictable partial-error risks. Unexpected invariant violations make the system unavailable for reconciliation rather than triggering guessed stock repair.
 
-## Durability and acknowledgement
+## Acknowledgement and accepted loss risk (16 October 2026)
 
-Redis AOF uses everysec and a persistent volume. In-memory execution alone is not a successful placement acknowledgement. The API confirms local AOF persistence with WAITAOF after the admission write on its owning connection, checking the returned local confirmation count. Connection pooling/batching must preserve that ordering without blocking unrelated commands behind durability waits.
+The API returns PROCESSING/queued as soon as the primary acknowledges the atomic
+reservation Lua script. There is no WAITAOF or WAIT, and no post-admission
+PostgreSQL lookup on the purchase response path. Same-key replay returns the
+acknowledged reservation state; use GET order status to observe a committed order.
+A duplicate identifier with a new key returns already_placed plus PROCESSING.
 
-On confirmation the page can say order placed and PROCESSING. On timeout or lost connection the public state is NOT_ORDERED/confirmation_uncertain; the result is uncertain and the existing purchase button permits retry. The operation may already exist or may subsequently be lost before persistence. AOF everysec without the barrier would not meet the acknowledged-admission guarantee.
+This user-approved decision supersedes the prior local-AOF acknowledgement
+contract. Acknowledgement means primary-memory acceptance, not disk persistence,
+replica receipt or a final order. A crash/failover before persistence/replication
+can lose an acknowledged admission, including its stock reservation, deduplication
+keys and stream entry. PostgreSQL committed orders remain the final authority.
+AOF everysec remains enabled on the primary and replica as background persistence.
 
-Lookup and same-key replay cannot bypass confirmation. A worker must also establish the admission record's durability before finalizing its order; reading an entry is not itself durability evidence. A checkpoint write followed by a local barrier can establish an AOF prefix including earlier admission data, but its exact implementation must be proven against the pinned Redis version.
+### One asynchronous replica
 
-### Exact confirmation protocol
+Both demonstration and isolated test Compose projects include exactly one
+`redis-replica`, configured with `--replicaof redis 6379`, read-only access and its
+own persistent volume. Health checks require the primary replication link up.
+API/worker reads and writes stay on `redis`; they never use stale replica reads
+for allocation or order status. The replica is not a required acknowledgement,
+and the application continues when it is offline. No Sentinel, automatic
+promotion, client failover or separate-host redundancy is implemented. Primary
+restart can resynchronize the replica to older data; replica presence does not
+make an acknowledged write loss-proof.
 
-[DurableAdmission](../packages/redis/src/sales/durability.ts) takes a slot before opening a distinct socket for each operation. The default is 16 concurrent sockets per API or worker gate, batch size one, no waiting queue. Offline buffering and automatic reconnection are disabled; the socket is destroyed on completion or deadline. The 3,000 ms deadline covers connection, validation, script and barrier. Blocking stream reads use a separate connection.
+### Bounded admission and validation
 
-Each operation checks AOF configuration, noeviction and AOF write health. The [confirmation script](../packages/redis/src/sales/durability-scripts.ts) checks the recovery fence, absence of a fault latch, non-expiring state, identifier/request/reservation associations and exact stream payload. It increments `confirmation_checkpoint` in the sale hash on the same socket, then runs `WAITAOF 1 0 <timeout>` and requires the local count to equal one. This applies to fresh placement, allocated replay, duplicate lookup and worker confirmation. Non-allocation outcomes also receive a barrier before a definitive response.
+[RedisAdmission](../packages/redis/src/sales/acknowledgement.ts) takes one of 16
+concurrent slots per service before opening an operation-owned socket. The
+3,000-ms deadline covers connection, validation and Lua. There is no waiting
+queue, offline buffering or automatic command replay. Other application/HTTP
+limits are unchanged; 16 slots are a concurrency bound, not a requests/second rate.
 
-Redis is pinned to 7.4.8. Its WAITAOF tracks the calling client's write offset: a fresh socket's wait alone cannot confirm another socket's writes. The checkpoint advances that client's offset past the validated reservation and stream writes; confirming that global AOF prefix covers the earlier admission. It neither forces immediate fsync nor establishes replica quorum. Independent sockets avoid head-of-line blocking behind another operation's wait, but disk cadence and connection overhead still limit throughput.
+Each operation checks AOF everysec/noeviction configuration and write health.
+[Lookup validation](../packages/redis/src/sales/state-scripts.ts) checks the epoch
+fence, fault latch, absence of TTLs, mappings, reservation and stream payload. It
+is a validation of current primary state, not durability evidence. Workers perform
+this validation before PostgreSQL persistence without a disk/replica barrier.
+Retry claims, configuration, recovery and operator replay also use plain Redis
+acknowledgements; their metadata has the same accepted loss risk.
 
-A timeout, disconnect, malformed reply, persistence failure or fence leaves internal placement confirming and workers unable to finalize; the API exposes NOT_ORDERED/confirmation_uncertain. Gate saturation before send returns retryable busy; lookup saturation cannot establish confirmation. A client disconnect does not cancel a potentially sent command or release stock. An already-placed response can carry an existing order still unconfirmed; it is not a queued durability acknowledgement.
+A Redis reply lost after possible execution remains uncertain. The API exposes
+NOT_ORDERED/confirmation_uncertain and same-key retry, rather than inventing a
+successful acknowledgement or definitive rejection. Capacity exhaustion before
+send returns busy. These transport outcomes are distinct from acknowledged data
+subsequently lost in a crash.
 
-Evidence lives in [durability unit tests](../packages/redis/src/sales/durability.test.ts), [integration tests](../tests/integration), and [failure tests](../tests/failure). The fsync-suppression regression distinguishes unrelated-connection waits from writer/checkpoint waits; crash cases cover before/after Lua, blocked WAITAOF, confirmation before response, AOF rewrite and network reply loss. See [failure matrix](failure-matrix.md) for exact coverage and its limits.
+Evidence: [acknowledgement unit tests](../packages/redis/src/sales/acknowledgement.test.ts),
+[replication tests](../tests/integration/replication.test.ts),
+[loss simulation](../tests/integration/admission-loss.test.ts), and
+[crash tests](../tests/failure/durability.test.ts). The loss simulation deliberately
+restores an older consistent reservation snapshot; SIGKILL alone usually retains
+OS page-cache writes and is not a deterministic simulation of host power loss.
 
 ## Processing
 
-Workers use a Redis Stream consumer group and reclaim abandoned pending messages. Delivery may repeat. After admission durability is established, PostgreSQL records an order in a transaction with a unique(sale,user_identifier) constraint. A matching existing order is success on replay. The worker then repairs Redis completion status and acknowledges the stream entry.
+Workers use a Redis Stream consumer group and reclaim abandoned pending messages. Delivery may repeat. After current admission identity is validated, PostgreSQL records an order under the sale-row stock cap and unique(sale,user_identifier) constraint. A matching existing order is success on replay. The worker then repairs Redis completion status and acknowledges the stream entry.
 
-A worker crash after database commit but before acknowledgement causes repeat processing, not another order. A lost commit response is resolved by querying/retrying against the unique constraint. Reservations are not released on transient errors, slow processing or retry exhaustion. Backoff and finite automatic retries lead to a durable delayed-recovery state, with operator replay available.
+A worker crash after database commit but before acknowledgement causes repeat processing, not another order. A lost commit response is resolved by querying/retrying against the unique constraint. Reservations are not released on transient errors, slow processing or retry exhaustion. Backoff and finite automatic retries lead to a delayed-recovery state in Redis, with operator replay available.
 
-No post-admission business rejection is defined. Payment failures, fraud checks, shipping/eligibility rejection and inventory discrepancies from external systems are absent. Valid admitted orders are expected eventually to succeed given service recovery/manual remediation and intact persistent storage. This is not a guarantee of a fixed completion time during outage.
+No post-admission business rejection is defined. Payment failures, fraud checks, shipping/eligibility rejection and inventory discrepancies from external systems are absent. Surviving admitted reservations are expected eventually to succeed given service recovery/manual remediation. Acknowledged Redis admissions may instead be lost before PostgreSQL commit. This is not a guarantee of a fixed completion time during outage.
 
 ## Public states and retries
 
 * NOT_ORDERED: initial client state; the current public route also returns it for missing reservations (see public uncertainty semantics below).
-* NOT_ORDERED/confirmation_uncertain: admission outcome/durability unresolved; retry the same key. PROCESSING/confirming remains an internal library state.
-* PROCESSING/queued or processing: reservation confirmed, final order pending.
+* NOT_ORDERED/confirmation_uncertain: admission outcome unresolved; retry the same key. PROCESSING/confirming remains an internal library state.
+* PROCESSING/queued or processing: primary acknowledged reservation, final order pending.
 * PROCESSING/delayed: retry metadata or quarantine exists, including retry backoff and exhaustion; allocation retained.
 * SUCCESS: PostgreSQL order committed.
 * REJECTED: definitive admission failure, with upcoming/ended/sold_out/already_placed or input reason.
@@ -90,19 +141,32 @@ Absence in a lookup cannot alone establish rejection: an old request could still
 
 [Service startup/readiness](../apps/api/src/service.ts) is shared with workers. Each process caches the Redis run ID per reconciled sale. On startup or epoch change it reads that sale's complete PostgreSQL order snapshot and invokes recovery. There is no leader lease: replicas may independently run reconciliation; Redis serializes their scripts. This can briefly fence traffic again. A snapshot racing a worker commit is safe because the allocation remains retained and the worker/replay can repair its completion marker.
 
-[Recovery](../packages/redis/src/sales/durability-scripts.ts) clears `recovered_run`, validates immutable configuration and checks `initial_stock = remaining_stock + retained reservations`. It validates both mappings, outcome/retry schemas, timestamps, key types and absence of TTLs. Completed allocations remain reservations and count exactly once. Every DB order must match an allocation and its admission timestamp.
+[Recovery](../packages/redis/src/sales/state-scripts.ts) clears `recovered_run`, validates immutable configuration and checks `initial_stock = remaining_stock + retained reservations`. It validates both mappings, outcome/retry schemas, timestamps, key types and absence of TTLs. Completed allocations remain reservations and count exactly once. Every DB order must match an allocation and its admission timestamp.
 
 If a valid reservation has lost its stream entry, recovery appends replacement work, updates its stream pointer and transfers retry/quarantine metadata in the atomic script. Matching DB orders repair completion mappings. Conflicting state, unexplained counts or `admission_fault` leave the fence closed with diagnostics. Recovery never recreates inventory from DB counts, increments stock or clears a fault latch automatically. Repairs performed before a later validation failure remain fenced for a safe rerun or operator investigation; Lua is not rollback.
 
-Only successful validation writes the current Redis `INFO server` run_id into `recovered_run`, advances the checkpoint and then waits for local AOF persistence. Admission and confirmation compare the stored run with the live run inside Lua; a persisted old fence cannot authorize a restarted Redis. Even if another operation runs between recovery's script and barrier, it still needs its own confirmation. Previously issued process-local durable evidence remains valid across a restart with intact storage.
+Only successful reconciliation writes the current Redis run_id into recovered_run.
+Admission and lookup compare this epoch inside Lua, so a persisted old fence does
+not authorize a restarted primary. No disk/replica acknowledgement is awaited.
+If PostgreSQL contains committed orders whose Redis allocation metadata was lost,
+readiness stays closed for operator repair rather than risking overselling. This
+case is not automatically reconstructed from database counts.
 
-The epoch fence prevents execution while recovery is incomplete. It does **not** prove an old API command can never execute after recovery reopens. Consequently there is no definitive-absence proof implemented: the durability library returns confirming (`missing_without_absence_proof`) for missing reservations, including after recovery. A completed admission script's durable rejection applies to that logical request key; it is not proof of absence for every possible in-flight request.
+The fence does not prove an old API command cannot execute after recovery reopens.
+Missing reservations are observational absence, not definitive rejection of every
+in-flight request. Lost acknowledged admissions can be retried with the original
+key; current window and stock rules still apply if the key itself was lost.
 
 ### Public uncertainty semantics (user-approved revision)
 
-Public NOT_ORDERED means placement is not currently confirmed, not definitive proof of non-admission. The API returns it for a successful empty lookup and adds `reason: "confirmation_uncertain"` for unconfirmed placement or a known reservation awaiting durability. HTTP 202 on an unconfirmed purchase makes no durable acknowledgement. Internal library confirmation remains conservative, and worker authority is unchanged.
-
-The client displays “We couldn’t confirm your order. Try again.” and re-enables the existing Buy Now button. It retains the original request key through empty lookups and retries it even after closure/sellout; polling can discover completion without another click. Confirmed queued/delayed/SUCCESS states never regress to NOT_ORDERED. A lost admission retried after closing or sellout can be rejected. Refresh loses the in-memory key, but identifier uniqueness still prevents double allocation. This approved revision replaces the original public missing-lookup requirement; no new durable store or absence proof is introduced.
+Public NOT_ORDERED means no order/reservation is currently observed, not proof
+that a delayed request cannot execute. Failed or uncertain lookup retains the
+previous UI state. A successful fresh empty lookup may now clear PROCESSING,
+because its acknowledgement is provisional until PostgreSQL commit. The page
+shows “Your reservation is no longer available. Please try again.” and retains
+the in-memory request key. SUCCESS never regresses. Lookup generations still
+prevent pre-submission responses or another identifier from erasing newer state.
+A retry after sale closure or sellout may be rejected if the admission was lost.
 
 Operator commands and bounded replay are in [recovery operations](recovery.md). Do not trim, expire, evict or manually mutate retained keys. Missing-entry reconstruction is a defensive recovery capability, not permission for routine stream deletion.
 
@@ -116,15 +180,15 @@ A short PostgreSQL reservation transaction is a valid alternative and need not w
 
 Local crash/restart recovery assumes intact persistent volumes and correct storage synchronization. Volume loss/corruption, host failure redundancy and regional failover are out of scope. Production would require a broader replication/durability and recovery design.
 
-Sources: [Redis Streams](<https://redis.io/docs/latest/develop/data-types/streams/>), [Redis persistence](<https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/>), [WAITAOF](<https://redis.io/docs/latest/commands/waitaof/>).
+Sources: [Redis Streams](<https://redis.io/docs/latest/develop/data-types/streams/>), [Redis persistence](<https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/>), [Redis replication](<https://redis.io/docs/latest/operate/oss_and_stack/management/replication/>).
 
 ## Implementation map and retained key schema
 
-[Key construction](../packages/redis/src/sales/configuration.ts) uses `sale:{<UTF-8 sale ID encoded as hex>}:admission`. The braces put all suffixes in one Redis Cluster slot; the deployed authority is a single Redis instance.
+[Key construction](../packages/redis/src/sales/configuration.ts) uses `sale:{<UTF-8 sale ID encoded as hex>}:admission`. The braces put all suffixes in one Redis Cluster slot; the deployed authority is one Redis primary with one asynchronous replica.
 
 | Suffix | Type | Contents |
 | --- | --- | --- |
-| none | hash | `configuration_version=1`, `starts_at`, `ends_at` (epoch ms), `initial_stock`, `remaining_stock`; `recovered_run`, `confirmation_checkpoint`, `replay_checkpoint` after operator replay; optional `admission_fault` / `recovery_diagnostic` |
+| none | hash | `configuration_version=1`, `starts_at`, `ends_at` (epoch ms), `initial_stock`, `remaining_stock`; `recovered_run`, `replay_checkpoint` after operator replay; optional `admission_fault` / `recovery_diagnostic` |
 | `:identifiers` | hash | normalized identifier → original allocated request key |
 | `:requests` | hash | allocated request key → normalized identifier |
 | `:reservations` | hash | request key → JSON `{identifier, admittedAtMs, streamId}` |
@@ -137,8 +201,8 @@ Sources: [Redis Streams](<https://redis.io/docs/latest/develop/data-types/stream
 
 All evidence is retained without TTL. Outcome storage also grows with rejected distinct request keys, not just admitted stock. The [admission script](../packages/redis/src/sales/admission-script.ts) sets a fault latch before mutation and clears it only after protected writes succeed.
 
-The [worker](../apps/worker/src/orders/consumer.ts) uses separate blocking/command sockets, COUNT 10 reads/claims, 250 ms blocking reads and 60,000 ms abandoned-message reclaim. Each worker processes sequentially. It matches request key, stream ID and admission timestamp against durable evidence before calling [persistOrder](../packages/database/src/sales/orders.ts). PostgreSQL INSERT ON CONFLICT DO NOTHING followed by matching-timestamp lookup returns the existing UUID on replay; a mismatched timestamp is quarantined. Unknown COMMIT results discard the connection and retry this same identity. Completion hash writes and XACK are repeatable hints; PostgreSQL remains the final order authority. XACK does not delete the stream entry.
+The [worker](../apps/worker/src/orders/consumer.ts) uses separate blocking/command sockets, COUNT 10 reads/claims, 250 ms blocking reads and 60,000 ms abandoned-message reclaim. Each worker processes sequentially. It matches request key, stream ID and admission timestamp against current primary reservation state before calling [persistOrder](../packages/database/src/sales/orders.ts). PostgreSQL takes the sale-row lock, looks up existing identity before the capacity check and uses INSERT ON CONFLICT DO NOTHING for new orders. Matching-timestamp replay returns the existing UUID; a mismatched timestamp is quarantined. A new order at committed capacity is quarantined and fences admission. Unknown COMMIT results discard the connection and retry this same identity. Completion hash writes and XACK are repeatable hints; PostgreSQL remains the final order authority. XACK does not delete the stream entry.
 
-The [two-table schema](../packages/database/src/sales/schema.ts) has immutable `flash_sale` configuration and `"order"` with a sale foreign key, admission/completion timestamps and UNIQUE(flash_sale_id, user_identifier). Admission reserves inventory; AOF confirmation establishes admission persistence; the PostgreSQL transaction finalizes an order. Neither later step consumes another unit.
+The [two-table schema](../packages/database/src/sales/schema.ts) has immutable `flash_sale` configuration and `"order"` with a sale foreign key, admission/completion timestamps and UNIQUE(flash_sale_id, user_identifier). Admission reserves inventory and returns its acknowledgement without waiting for persistence; the PostgreSQL transaction finalizes an order without consuming another unit.
 
 Exact runtime versions, retry/poll defaults, operational bounds and measured limitations are in [decisions](decisions.md). Public route shapes and input limits are in [public contract](public-contract.md).

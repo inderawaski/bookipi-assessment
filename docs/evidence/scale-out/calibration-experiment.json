@@ -1,0 +1,28 @@
+{
+  "startedAt": "2026-10-16T08:13:46.431433+00:00",
+  "workload": "spike-10k",
+  "connections": 1000,
+  "maxConnections": 1000,
+  "runs": [
+    {
+      "api": 1,
+      "workers": 1,
+      "startedAt": "2026-10-16T08:13:46.432083+00:00",
+      "endedAt": "2026-10-16T08:15:14.240997+00:00",
+      "exitCode": 1,
+      "projects": [
+        "test-results/stress/flash-test-a3e56334-afeb-4509-895d-7edc7eeb7749"
+      ],
+      "log": "docs/evidence/scale-out/api1-worker1.log"
+    },
+    {
+      "api": 3,
+      "workers": 1,
+      "projects": [
+        "test-results/stress/flash-test-159ec98f-9552-4740-94d4-bc0018f0f3ba"
+      ],
+      "log": "docs/evidence/scale-out/api3-worker1.log",
+      "note": "Controller stopped launching further 1000-socket calibration cases; child completed normally. See log and result for status."
+    }
+  ]
+}

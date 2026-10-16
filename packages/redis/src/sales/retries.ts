@@ -24,10 +24,6 @@ return state.attempts
 export async function claimAttempt(redis: Connection, saleId: string, id: string, policy: RetryPolicy) {
   const prefix = saleKey(saleId);
   const attempt = Number(await redis.sendCommand(['EVAL', claim, '2', `${prefix}:retries`, `${prefix}:retry_due`, id, String(policy.maxAttempts), '60000']));
-  if (attempt) {
-    const result = await redis.sendCommand(['WAITAOF', '1', '0', '2000']);
-    if (!Array.isArray(result) || result[0] !== 1) throw new Error('Retry durability unavailable');
-  }
   return attempt;
 }
 export async function delayAttempt(redis: Connection, saleId: string, id: string, attempt: number, policy: RetryPolicy) {
@@ -56,8 +52,6 @@ if state.completed or not state.exhausted or state.nextAt > now then return 0 en
 state.attempts=0; state.exhausted=false; state.nextAt=0; state.reason='operator_replay'
 redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(state)); redis.call('ZADD', KEYS[2], 0, ARGV[1]); return 1
 `, '4', `${prefix}:retries`, `${prefix}:retry_due`, `${prefix}:quarantine`, prefix, id]);
-  const durable = await redis.sendCommand(['WAITAOF', '1', '0', '2000']);
-  if (!Array.isArray(durable) || durable[0] !== 1) throw new Error('Replay durability unconfirmed; safe to repeat');
   return Number(result);
 }
 

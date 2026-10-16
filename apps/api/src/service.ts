@@ -2,14 +2,14 @@ import { Metrics, registerOperations, singleFlightProbe } from '@flash/operation
 import { registerSaleRoutes } from './sales/routes.js';
 import { createHealthServer } from './health.js';
 import { createDatabase, listSales } from '@flash/database';
-import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, DurableAdmission, saleKey } from '@flash/redis';
+import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, RedisAdmission, saleKey } from '@flash/redis';
 import { parseConfiguration } from '@flash/configuration';
 export async function startService(service: 'api' | 'worker') {
   const config = parseConfiguration(process.env, service);
   const database = createDatabase(config.databaseUrl, config.databasePoolSize, config.dependencyTimeoutMs);
   const redis = createRedisConnection(config.redisUrl, 'commands', config.dependencyTimeoutMs);
   const metrics = new Metrics();
-  const admission = new DurableAdmission(config.redisUrl, config.admissionConcurrency, config.admissionTimeoutMs, seconds => metrics.observe('barrier_latency_seconds', seconds));
+  const admission = new RedisAdmission(config.redisUrl, config.admissionConcurrency, config.admissionTimeoutMs);
   const recoveredRuns = new Map<string, string>();
   const probe = singleFlightProbe(async () => {
     if (!redis.isReady) await redis.connect();

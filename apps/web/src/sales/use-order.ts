@@ -39,9 +39,15 @@ export function useOrder(identifier: string, session: Session) {
         if (version === lookupVersion.current) {
           if (result.status === 'AVAILABLE') {
             session.checked = true;
+            const previous = session.order;
             session.order = reconcileOrder(session.order, result.order);
+            if (previous.status === 'PROCESSING' && session.order.status === 'NOT_ORDERED' && result.order.status === 'NOT_ORDERED' && !result.order.reason) {
+              session.uncertain = true;
+              session.message = 'Your reservation is no longer available. Please try again.';
+            }
             if ((result.order.status === 'SUCCESS' || (result.order.status === 'PROCESSING' && result.order.phase !== 'confirming')) && session.uncertain) {
-              session.uncertain = false; session.key = undefined; session.message = '';
+              session.uncertain = false; session.message = '';
+              if (result.order.status === 'SUCCESS') session.key = undefined;
             }
             if (result.order.status === 'NOT_ORDERED' && result.order.reason === 'confirmation_uncertain' && session.order.status === 'NOT_ORDERED') {
               session.uncertain = true; session.message = 'We couldn’t confirm your order. Try again.';
@@ -78,7 +84,7 @@ export function useOrder(identifier: string, session: Session) {
         session.message = result.reason === 'already_placed' ? 'Already placed: this identifier already has an order.' : rejections[result.reason];
       }
       if (session.uncertain && !retryBlocked) session.message += (session.message ? ' ' : '') + 'We couldn’t confirm your order. Try again.';
-      if (!session.uncertain) session.key = undefined;
+      if (!session.uncertain && session.order.status !== 'PROCESSING') session.key = undefined;
     } catch {
       // Delivery may have reached Redis. Only replay this key; never guess rejection.
       session.uncertain = true;

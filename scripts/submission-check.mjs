@@ -30,7 +30,7 @@ const checks = [
   ['docker', ['compose', '--env-file', '.env.example', 'config', '--quiet']],
   ['docker', ['compose', '-f', 'compose.test.yaml', '--profile', 'stress', 'config', '--quiet']],
   ['pnpm', ['test:integration']], ['pnpm', ['test:browser']], ['pnpm', ['test:failure']],
-  ['pnpm', ['test:stress', 'stock100-1k', 'stock100-10k', 'duplicates', 'stock100-100k', 'stock10k-100k']],
+  ['pnpm', ['test:stress', 'no-oversell', 'duplicates', 'sufficient-stock', 'burst-10s', 'burst-3s', 'burst-1s', 'spike-10k']],
   ['pnpm', ['test:stress', 'healthy', 'sufficient-stock', 'opening', 'closing', 'closing-worker-crash', 'worker-crash', 'repeated']],
   ['git', ['diff', '--check']],
 ];

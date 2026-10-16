@@ -1,10 +1,11 @@
 import { expect, it, vi } from 'vitest';
 import { assertAdmissionConfiguration, initializeAdmission, saleKey } from './configuration.js';
 const sale = { id: 'arbitrary } / 人', startsAt: '2030-01-01T00:00:00Z', endsAt: '2030-01-02T00:00:00Z', initialStock: 3 };
-it('requires confirmed local AOF durability for configuration success', async () => {
-  const sendCommand = vi.fn().mockResolvedValueOnce(1).mockResolvedValueOnce([0, 0]);
-  await expect(initializeAdmission({ sendCommand }, sale)).rejects.toThrow('durability');
-  expect(sendCommand.mock.calls[1]?.[0]).toEqual(['WAITAOF', '1', '0', '2000']);
+it('initializes from the Redis write acknowledgement without a persistence wait', async () => {
+  const sendCommand = vi.fn().mockResolvedValue(1);
+  await expect(initializeAdmission({ sendCommand }, sale)).resolves.toBeUndefined();
+  expect(sendCommand).toHaveBeenCalledTimes(1);
+  expect(sendCommand.mock.calls[0]?.[0]?.[0]).toBe('EVAL');
 });
 it('compares immutable fields while accepting depleted stock', async () => {
   const fields = [String(Date.parse(sale.startsAt)), String(Date.parse(sale.endsAt)), '3', '0'];

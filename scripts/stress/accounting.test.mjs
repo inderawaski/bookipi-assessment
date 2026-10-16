@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { inputs, scenarios, summarize, validateFinal, resourceSample, admissionsWithinWindow } from './accounting.mjs';
+import { inputs, scenarios, summarize, validateFinal, resourceSample, admissionsWithinWindow, orderLatency } from './accounting.mjs';
 import { burst } from './generator.mjs';
 
 test('prescribed cases and duplicate keys have exact cardinality', () => {
-  assert.deepEqual(scenarios.slice(0, 5).map(s => [s.stock, s.requests, s.identifiers]), [[100, 1000, 1000], [100, 10000, 10000], [100, 10000, 100], [100, 100000, 100000], [10000, 100000, 100000]]);
+  assert.deepEqual(scenarios.slice(0, 7).map(s => [s.stock, s.requests, s.identifiers]), [[10, 100, 100], [10, 100, 10], [1000, 1000, 1000], [100, 5000, 5000], [100, 5000, 5000], [100, 5000, 5000], [100, 10000, 10000]]);
   for (const scenario of scenarios) {
     const records = inputs(scenario);
     assert.equal(new Set(records.map(r => r.identifier)).size, scenario.identifiers);
@@ -128,4 +128,39 @@ test('closed preconnected sockets retain failed queued request accounting', asyn
     assert.ok(result.outcomes.transport_error > 0);
     assert.equal(Object.values(result.outcomes).reduce((sum, count) => sum + count, 0), 100);
   } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('order SLO rejects missing observations, empty admissions and exact p99 boundary', () => {
+  const entries = Array.from({ length: 100 }, (_, i) => ({ message: { identifier: String(i), admitted_at_ms: '1000' } }));
+  const observed = Object.fromEntries(entries.map(e => [e.message.identifier, 2999]));
+  observed['99'] = 11000;
+  assert.ok(Object.values(orderLatency(entries, observed).invariants).every(Boolean));
+  observed['98'] = 3000;
+  assert.equal(orderLatency(entries, observed).invariants.orderP99UnderTwoSeconds, false);
+  observed['99'] = 11001;
+  assert.equal(orderLatency(entries, observed).invariants.allOrdersWithinTenSeconds, false);
+  delete observed['0'];
+  assert.equal(orderLatency(entries, observed).invariants.orderLatencyObserved, false);
+  assert.equal(orderLatency([], {}).invariants.orderLatencyObserved, false);
+});
+test('dispatch validity uses each workload window independently of one-second response metric', () => {
+  const records = [{ index: 0, scheduledMs: 2000, dispatchMs: 2999, completedMs: 4000 }];
+  assert.equal(summarize(records, 1, 3000).validDispatch, true);
+  assert.equal(summarize(records, 1, 3000).allResponsesWithinOneSecond, false);
+  assert.equal(summarize(records, 1, 3000).allResponsesWithinWindow, false);
+  assert.equal(summarize(records, 1, 1000).validDispatch, false);
+});
+
+test('generator honors synchronized release and custom arrival windows over real HTTP', async t => {
+  const server = http.createServer((_req, res) => { res.end('{"status":"SUCCESS"}'); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const scenario = { requests: 3, identifiers: 3, dispatchWindowMs: 200, scheduleWindowMs: 100 };
+  const paced = await burst(base, 'sale', scenario);
+  assert.deepEqual(paced.records.map(r => r.scheduledMs), [0, 100 / 3, 200 / 3]);
+  assert.equal(paced.validDispatch, true);
+  const synchronized = await burst(base, 'sale', { ...scenario, scheduleWindowMs: 0 });
+  assert.deepEqual(synchronized.records.map(r => r.scheduledMs), [0, 0, 0]);
+  assert.equal(synchronized.validDispatch, true);
 });

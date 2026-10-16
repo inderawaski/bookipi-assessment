@@ -23,7 +23,7 @@ test('normalizes arbitrary identifiers, rejects empty input and locks double sub
   });
   await page.getByLabel('Your identifier').fill('  Any NAME + / ?  ');
   await button.evaluate((element: HTMLButtonElement) => { element.click(); element.click(); });
-  await expect(page.getByText('Order placed. Waiting for processing to complete.')).toBeVisible();
+  await expect(page.getByText('Reservation received. Waiting for order confirmation.')).toBeVisible();
   expect(deliveries).toBe(1); expect(body?.identifier).toBe('any name + / ?');
 });
 
@@ -211,3 +211,23 @@ for (const outcome of ['NOT_ORDERED', 'lost-response']) {
     await expect(page.getByText('We couldn’t confirm your order. Try again.')).toHaveCount(0);
   });
 }
+
+test('fresh missing reservation clears PROCESSING and retries the original key', async ({ page }) => {
+  await setup(page);
+  let missing = false;
+  await page.route('**/order?*', route => route.fulfill({ json: available(missing ? { status: 'NOT_ORDERED' } : { status: 'PROCESSING', phase: 'queued' }) }));
+  const keys: string[] = [];
+  await page.route('**/purchases', route => {
+    keys.push(route.request().postDataJSON().idempotencyKey);
+    return route.fulfill({ status: 202, json: { status: 'PROCESSING', phase: 'queued' } });
+  });
+  await page.getByLabel('Your identifier').fill('lost-reservation');
+  await page.getByRole('button', { name: 'Buy Now' }).click();
+  await expect(page.getByRole('heading', { name: 'PROCESSING' })).toBeVisible();
+  missing = true;
+  await expect(page.getByText('Your reservation is no longer available. Please try again.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'PROCESSING' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Buy Now' }).click();
+  expect(keys).toHaveLength(2);
+  expect(keys[1]).toBe(keys[0]);
+});

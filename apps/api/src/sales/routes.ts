@@ -2,12 +2,12 @@ import { correlation, type Metrics } from '@flash/operations';
 import type { FastifyInstance, FastifyError } from 'fastify';
 import { normalizeIdentifier, normalizePurchase, operationalLimits, saleRoutes, saleParamsSchema, purchaseBodySchema, lookupQuerySchema, purchaseResponseSchema, lookupResponseSchema, saleResponseSchema, purchaseHttpStatus, type PurchaseInput, type PurchaseResponse, type OrderState } from '@flash/contracts';
 import { listSales, type createDatabase } from '@flash/database';
-import { saleKey, type createRedisConnection, type DurableAdmission } from '@flash/redis';
+import { saleKey, type createRedisConnection, type RedisAdmission } from '@flash/redis';
 
 export function registerSaleRoutes(app: FastifyInstance, dependencies: {
   database: ReturnType<typeof createDatabase>;
   redis: ReturnType<typeof createRedisConnection>;
-  admission: DurableAdmission;
+  admission: RedisAdmission;
   probe: () => Promise<void>;
   webOrigin?: string;
   metrics?: Metrics;
@@ -49,7 +49,7 @@ export function registerSaleRoutes(app: FastifyInstance, dependencies: {
     if (order) return order;
     await probe();
     const confirmation = await admission.lookup(id, identifier);
-    if (confirmation.status !== 'durable') {
+    if (confirmation.status !== 'present') {
       // This is an observation, not proof that a delayed purchase cannot execute later.
       if (confirmation.diagnostic === 'missing_without_absence_proof') return { status: 'NOT_ORDERED' };
       if (await redis.hGet(`${saleKey(id)}:identifiers`, identifier)) return { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' };
@@ -92,13 +92,7 @@ export function registerSaleRoutes(app: FastifyInstance, dependencies: {
     let result: PurchaseResponse = await admission.place(payload.saleId, payload);
     const outcome = result.status === 'NOT_ORDERED' ? 'uncertain' : result.status === 'REJECTED' ? result.reason : result.status === 'PROCESSING' && result.phase === 'confirming' ? 'uncertain' : 'admitted';
     request.log.info({ requestKeyHash: correlation(payload.idempotencyKey), reservationHash: correlation(payload.saleId + ':' + payload.identifier), outcome }, 'Purchase admission');
-    if (result.status === 'PROCESSING' || (result.status === 'REJECTED' && result.reason === 'already_placed')) {
-      try {
-        const order = await allocated(payload.saleId, payload.identifier);
-        if (order.status !== 'NOT_ORDERED') result = result.status === 'REJECTED' ? { ...result, existingOrder: order } : order;
-      } catch { /* Preserve admission evidence when subsequent reads fail. */ }
-    }
-    // Keep internal durability uncertainty; expose the agreed retryable public state.
+    // Keep internal command-outcome uncertainty; expose the agreed retryable public state.
     if (result.status === 'PROCESSING' && result.phase === 'confirming') result = { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' };
     if (result.status === 'REJECTED' && result.reason === 'already_placed' && result.existingOrder.status === 'PROCESSING' && result.existingOrder.phase === 'confirming') {
       result = { ...result, existingOrder: { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' } };

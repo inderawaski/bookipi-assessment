@@ -32,6 +32,7 @@ for (const project of projects) {
           sale: result.sale, passed: result.passed && !runnerError, runnerError, error: result.error, recoveryError: result.recoveryError,
           burst: withoutRecords(result.burst), repeatedBursts: result.repeatedBursts?.map(withoutRecords),
           orders: result.final?.orders.length, admissions: result.final?.entries.length, invariants: result.final?.invariants,
+          orderVisibility: result.orderVisibility, observationError: result.observationError,
           queueDrainMs: result.queueDrainMs, failureEvents: result.failureEvents, replayAfterEnd: result.replayAfterEnd, newAfterEnd: result.newAfterEnd });
       }
     }

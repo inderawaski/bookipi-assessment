@@ -1,5 +1,12 @@
 # DEV-16 / P00 integration coverage
 
+> This matrix describes the earlier barrier-based contract. The 16 October 2026
+> immediate-acknowledgement decision supersedes its durability guarantees. Current
+> tests use RedisAdmission/current-state validation; crash tests allow admission
+> loss, and new integration/browser tests cover replica outage and lost reservations.
+> See [current architecture](architecture.md#acknowledgement-and-accepted-loss-risk-16-october-2026).
+
+
 Run `pnpm install --frozen-lockfile`, then `pnpm test:integration`. The runner builds workspace packages before loading tests and creates a unique Compose project with PostgreSQL 18.3-bookworm and Redis 7.4.8-alpine, persistent disposable volumes and unique host ports. Files run serially because restart tests operate on those services. Sale IDs are UUIDs; API instances, admission gates and workers belong to each test and close in finally blocks. No demonstration data is reset.
 
 Run `pnpm test:browser` separately for Chromium UI evidence. Those tests stub HTTP responses; they complement the real-service suite rather than proving backend durability. `pnpm test:unit` remains the code tickets' pure-rule suite.

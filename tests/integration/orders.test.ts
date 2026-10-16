@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { migrate, persistSale, persistOrder } from '../../packages/database/src/index.js';
-import { DurableAdmission, admissionKeys, saleKey } from '../../packages/redis/dist/index.js';
+import { RedisAdmission, admissionKeys, saleKey } from '../../packages/redis/dist/index.js';
 import { orderGroup, processOrder } from '../../apps/worker/src/orders/consumer.js';
 import { testServices } from '../services.js';
 
@@ -14,7 +14,7 @@ it('persists once across concurrent deliveries, repeats completion/ack and quara
     await persistSale(database, sale);
     const keys = admissionKeys(sale.id);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '2', remaining_stock: '2', configuration_version: '1' });
-    const gate = new DurableAdmission(process.env.TEST_REDIS_URL!);
+    const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
     const stream = admissionKeys(sale.id)[4];

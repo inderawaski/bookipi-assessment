@@ -28,22 +28,24 @@ describe('state safety', () => {
   it('includes opening and excludes closing with Redis time', () => {
     expect([99, 100, 199, 200].map(now => isAdmissionOpen(100, 200, now))).toEqual([false, true, true, false]);
   });
-  it('requires durability before persistence and never revokes a reservation', () => {
+  it('allows acknowledgement loss before commit while committed orders remain final', () => {
     expect(canTransitionSubmission('unresolved', 'rejected')).toBe(true);
-    expect(canTransitionSubmission('reserved', 'durable')).toBe(true);
-    expect(canTransitionSubmission('durable', 'persisted')).toBe(true);
-    for (const state of ['reserved', 'durable', 'persisted'] as const) expect(canTransitionSubmission(state, 'rejected')).toBe(false);
-    expect(canTransitionSubmission('reserved', 'persisted')).toBe(false);
+    expect(canTransitionSubmission('reserved', 'acknowledged')).toBe(true);
+    expect(canTransitionSubmission('acknowledged', 'persisted')).toBe(true);
+    for (const state of ['reserved', 'acknowledged', 'persisted'] as const) expect(canTransitionSubmission(state, 'rejected')).toBe(false);
+    expect(canTransitionSubmission('reserved', 'persisted')).toBe(true);
+    expect(canTransitionSubmission('acknowledged', 'lost')).toBe(true);
+    expect(canTransitionSubmission('persisted', 'lost')).toBe(false);
     expect(canTransitionSubmission('persisted', 'reserved')).toBe(false);
   });
-  it('keeps allocation through rejected placements, unavailable lookup and stale responses', () => {
+  it('keeps committed orders final and permits fresh absence to clear a provisional reservation', () => {
     const success = { status: 'SUCCESS', orderId: 'order-1' } as const;
     const queued = { status: 'PROCESSING', phase: 'queued' } as const;
     const rejected = { status: 'REJECTED', reason: 'sold_out' } as const;
     expect(reconcileOrder(success, rejected)).toEqual(success);
     expect(reconcileOrder(queued, rejected)).toEqual(queued);
     expect(reconcileOrder(success, queued)).toEqual(success);
-    expect(reconcileOrder(queued, { status: 'NOT_ORDERED' })).toEqual(queued);
+    expect(reconcileOrder(queued, { status: 'NOT_ORDERED' })).toEqual({ status: 'NOT_ORDERED' });
     expect(reconcileOrder(queued, { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' })).toEqual(queued);
     expect(reconcileOrder(success, { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' })).toEqual(success);
     expect(reconcileOrder(queued, { status: 'PROCESSING', phase: 'confirming' })).toEqual(queued);

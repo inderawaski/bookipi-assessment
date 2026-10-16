@@ -1,15 +1,15 @@
 import { stripVTControlCharacters } from 'node:util';
 export const scenarios = [
-  { name: 'stock100-1k', stock: 100, requests: 1000, identifiers: 1000 },
-  { name: 'stock100-10k', stock: 100, requests: 10000, identifiers: 10000 },
-  { name: 'duplicates', stock: 100, requests: 10000, identifiers: 100 },
-  { name: 'stock100-100k', stock: 100, requests: 100000, identifiers: 100000 },
-  { name: 'stock10k-100k', stock: 10000, requests: 100000, identifiers: 100000 },
-  { name: 'new-key-duplicates', stock: 100, requests: 1000, identifiers: 100 },
-  { name: 'same-key-retries', stock: 100, requests: 1000, identifiers: 100, sameKey: true },
+  { name: 'no-oversell', stock: 10, requests: 100, identifiers: 100, scheduleWindowMs: 0 },
+  { name: 'duplicates', stock: 10, requests: 100, identifiers: 10, scheduleWindowMs: 0 },
+  { name: 'sufficient-stock', stock: 1000, requests: 1000, identifiers: 1000, measureOrders: true },
+  { name: 'burst-10s', stock: 100, requests: 5000, identifiers: 5000, dispatchWindowMs: 10000 },
+  { name: 'burst-3s', stock: 100, requests: 5000, identifiers: 5000, dispatchWindowMs: 3000 },
+  { name: 'burst-1s', stock: 100, requests: 5000, identifiers: 5000 },
+  { name: 'spike-10k', stock: 100, requests: 10000, identifiers: 10000, expectFill: true, orderSlo: true },
+  { name: 'same-key-retries', stock: 10, requests: 100, identifiers: 10, sameKey: true, scheduleWindowMs: 0 },
   { name: 'healthy', stock: 8, requests: 8, identifiers: 8, expectFill: true },
   { name: 'closing-worker-crash', stock: 1000, requests: 1000, identifiers: 1000, boundary: 'closing', failure: 'worker' },
-  { name: 'sufficient-stock', stock: 1000, requests: 1000, identifiers: 1000 },
   { name: 'opening', stock: 16, requests: 16, identifiers: 16, boundary: 'opening' },
   { name: 'closing', stock: 1000, requests: 1000, identifiers: 1000, boundary: 'closing' },
   { name: 'worker-crash', stock: 1000, requests: 1000, identifiers: 1000, failure: 'worker' },
@@ -36,7 +36,8 @@ export function summarize(records, offered, windowMs = 1000) {
   for (const r of records) outcomes[r.outcome ?? 'incomplete'] = (outcomes[r.outcome ?? 'incomplete'] ?? 0) + 1;
   return { validDispatch: reasons.length === 0, invalidReasons: reasons, offered, dispatched: dispatched.length,
     completed: completed.length, droppedIterations: offered - dispatched.length, outcomes,
-    allResponsesWithinOneSecond: completed.length === offered && completed.every(r => r.completedMs < windowMs),
+    allResponsesWithinOneSecond: completed.length === offered && completed.every(r => r.completedMs < 1000),
+    allResponsesWithinWindow: completed.length === offered && completed.every(r => r.completedMs < windowMs),
     dispatchLastMs: dispatched.length ? dispatched.reduce((max, r) => Math.max(max, r.dispatchMs), 0) : null,
     latencyMs: percentiles(completed.filter(r => r.dispatchMs != null).map(r => r.completedMs - r.dispatchMs)) };
 }
@@ -65,4 +66,15 @@ export function resourceSample(line) {
 export function admissionsWithinWindow(entries, sale) {
   return entries.every(entry => Number(entry.message.admitted_at_ms) >= Date.parse(sale.startsAt) &&
     Number(entry.message.admitted_at_ms) < Date.parse(sale.endsAt));
+}
+
+// Visibility is observed after commit, on the PostgreSQL clock. This upper bound
+// includes sampling delay; completed_at is assigned before COMMIT and is unsuitable.
+export function orderLatency(entries, observations) {
+  const values = entries.map(entry => Number(observations[entry.message.identifier]) - Number(entry.message.admitted_at_ms));
+  const complete = values.length > 0 && values.every(value => Number.isFinite(value) && value >= 0);
+  const latencyMs = percentiles(values.filter(value => Number.isFinite(value) && value >= 0));
+  return { latencyMs, maxMs: complete ? Math.max(...values) : null,
+    invariants: { orderLatencyObserved: complete, orderP99UnderTwoSeconds: complete && latencyMs.p99 < 2000,
+      allOrdersWithinTenSeconds: complete && values.every(value => value <= 10000) } };
 }

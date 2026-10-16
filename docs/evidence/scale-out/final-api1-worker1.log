@@ -1,0 +1,14 @@
+$ node scripts/stress.mjs spike-10k
+Scope: 5 of 9 workspace projects
+packages/configuration build$ tsc -p tsconfig.json
+packages/contracts build$ tsc -p tsconfig.json
+packages/operations build$ tsc -p tsconfig.json
+packages/configuration build: Done
+packages/contracts build: Done
+packages/database build$ tsc -p tsconfig.json
+packages/redis build$ tsc -p tsconfig.json
+packages/operations build: Done
+packages/database build: Done
+packages/redis build: Done
+spike-10k: /Users/waski/Vashikovich/bookipi-assessment/test-results/stress/flash-test-74ae3edb-1a1d-4377-9206-03b96b455f42/spike-10k/result.json
+[ELIFECYCLE] Command failed with exit code 1.

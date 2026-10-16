@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
 import { createDatabase, migrate, persistOrder, persistSale } from '../../packages/database/src/index.js';
-import { DurableAdmission, admissionKeys, initializeAdmission } from '../../packages/redis/dist/index.js';
+import { RedisAdmission, admissionKeys, initializeAdmission } from '../../packages/redis/dist/index.js';
 import { processOrder, orderGroup } from '../../apps/worker/src/orders/consumer.js';
 import { testServices } from '../services.js';
 
@@ -13,12 +13,22 @@ async function loseReply(url: string, command: string, partition = false) {
   const endpoint = new URL(url);
   const target = { host: endpoint.hostname, port: Number(endpoint.port) };
   const sockets = new Set<Socket>();
+  // Match complete wire command markers, not COMMIT inside READ COMMITTED.
+  const marker = command === 'COMMIT'
+    ? Buffer.concat([Buffer.from([0x51, 0, 0, 0, 11]), Buffer.from('COMMIT\0')])
+    : Buffer.from(`$${Buffer.byteLength(command)}\r\n${command}\r\n`);
   let dropped = false;
   const server = createServer(client => {
     const upstream = createConnection(target);
     sockets.add(client); sockets.add(upstream);
     let armed = false;
-    client.on('data', data => { if (data.includes(command)) armed = true; upstream.write(data); });
+    let tail = Buffer.alloc(0);
+    client.on('data', data => {
+      const chunk = Buffer.concat([tail, data]);
+      if (chunk.includes(marker)) armed = true;
+      tail = chunk.subarray(Math.max(0, chunk.length - marker.length + 1));
+      upstream.write(data);
+    });
     upstream.on('data', data => {
       if (armed) { dropped = true; if (!partition) { client.destroy(); upstream.destroy(); } }
       else client.write(data);
@@ -40,7 +50,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
   const { database, redis } = testServices();
   await redis.connect();
   const sale = { id: randomUUID(), startsAt: new Date(Date.now()+2000).toISOString(), endsAt: new Date(Date.now()+3600000).toISOString(), initialStock: 1 };
-  const keys = admissionKeys(sale.id), gate = new DurableAdmission(process.env.TEST_REDIS_URL!);
+  const keys = admissionKeys(sale.id), gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   let proxy: Awaited<ReturnType<typeof loseReply>> | undefined;
   let uncertainDatabase: ReturnType<typeof createDatabase> | undefined;
   try {
@@ -51,7 +61,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
     }, { timeout: 5000, interval: 25 }).toBe(true);
     if (scenario.startsWith('redis_')) {
       proxy = await loseReply(process.env.TEST_REDIS_URL!, 'EVAL', scenario === 'redis_partition');
-      const uncertain = new DurableAdmission(proxy.url, 1, 2000);
+      const uncertain = new RedisAdmission(proxy.url, 1, 2000);
       expect(await uncertain.place(sale.id, { identifier: 'person', idempotencyKey: 'key' })).toEqual({ status: 'PROCESSING', phase: 'confirming' });
       expect(proxy.dropped()).toBe(true);
     }

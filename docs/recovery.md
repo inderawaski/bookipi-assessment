@@ -1,6 +1,6 @@
 # Local recovery runbook
 
-Guarantee: acknowledged placements survive service crashes/restarts with Redis/PostgreSQL volumes intact. Storage loss/corruption is outside scope. Never delete volumes as a recovery action.
+Contract: PROCESSING acknowledges primary-memory admission without waiting for disk or replication. A Redis crash/failover may lose that acknowledgement before PostgreSQL commit, even with volumes intact. SUCCESS reflects a committed PostgreSQL order. Never delete volumes as a recovery action.
 
 ## Safety rules
 
@@ -13,19 +13,19 @@ Guarantee: acknowledged placements survive service crashes/restarts with Redis/P
 
 ## API outage or lost response
 
-Restart API. Client looks up sale+normalized identifier. If the submission is still in memory, retry with its original key. A confirmed reservation or committed order is returned. An unresolved durability/send outcome stays confirming until reconciled. No public attempt ID is required.
+Restart API. Client looks up sale+normalized identifier. If the submission is still in memory, retry with its original key. A confirmed reservation or committed order is returned. An unresolved send outcome stays confirming until reconciled. No public attempt ID is required.
 
 ## Redis outage/restart
 
 Stop/fence new admission. Restore from AOF on the existing volume. Verify configuration, persistence and key schema. Compare recovered reservations and queued work with committed PostgreSQL orders. Repair stale completed status and replayable unfinished work. Account for the union of allocations without double subtraction. Reopen only after invariant checks and fencing of pre-recovery commands succeed.
 
-If records are missing or inconsistent, keep readiness closed. A pending old command must not execute after a definitive rejection. Escalate to operator investigation rather than guessing inventory.
+If configuration/accounting is inconsistent, or a committed PostgreSQL order has no matching Redis reservation, keep readiness closed. A consistent older Redis snapshot can legitimately lack an acknowledged but uncommitted reservation; polling then reports NOT_ORDERED and a same-key retry is allowed. A pending old command must not execute after a definitive rejection. Escalate to operator investigation rather than guessing inventory.
 
 On startup and Redis epoch changes, each service readiness path fences admission and reconciles durable PostgreSQL orders against Redis reservations. Matching orders repair completion markers; missing stream entries are recreated atomically with retry/quarantine metadata transferred. This is the normal repair path, not a separate repair CLI. Restart services against the existing volumes:
 
 ```sh
 docker compose stop api worker
-docker compose up -d --wait postgres redis
+docker compose up -d --wait postgres redis redis-replica
 docker compose start api worker
 docker compose logs --tail=200 api worker
 curl -i http://localhost:8080/api/health/ready
@@ -40,9 +40,39 @@ Use the configured database/user if changed from the example. Stop all API repli
 
 Inspection prints `reconciliation` (stored recovery diagnostic), `retries` and `quarantine`. A null diagnostic alone is insufficient: all replicas must become ready, Redis persistence must be healthy, and allocation/order associations must reconcile. Unknown schema, expiring/wrong-type state, missing allocations or unexplained counts leave readiness closed. Inspect logs and retained data; there is no generic force-reopen command. If reconciliation cannot repair the inconsistency, preserve storage and investigate rather than hand-editing stock.
 
+## Asynchronous replica
+
+One read-only `redis-replica` follows the primary and has its own AOF volume. Check:
+
+```sh
+docker compose exec redis redis-cli INFO replication
+docker compose exec redis-replica redis-cli INFO replication
+docker compose exec redis-replica redis-cli INFO persistence
+```
+
+Expect one connected replica on the primary and master_link_status:up on the replica.
+Replica outage does not block primary admissions. Do not read inventory/status from
+the replica or treat it as proof that every acknowledged admission survived. There
+is no automatic failover or endpoint switching. Promotion requires an explicit
+operational plan to fence the old primary, select the new authority, update clients
+and reconcile PostgreSQL before reopening; do not promote blindly. A primary
+restart can resynchronize the replica to older state. Both volumes share one local
+Docker host and provide no host-failure isolation.
+
+## Final order capacity conflict
+
+A worker that encounters PostgreSQL's final stock cap records the stream entry in
+quarantine and sets admission_fault=committed_order_capacity. New admission remains
+fenced. Inspect committed PostgreSQL orders, lost/surviving Redis reservations,
+retry metadata and the quarantined entry. Do not clear the fault or replenish stock
+without repairing the associations against committed orders. Existing matching DB
+orders remain idempotent at full capacity; a conflicting new order does not commit.
+The original in-flight commit/Redis-loss race and approved guard are documented in
+[the final stock decision](admission-loss-crash-race.md).
+
 ## Worker outage
 
-Restart worker. Reclaim idle pending messages after the documented threshold. Ensure message admission is durable before finalization. Replayed committed orders are success; completion status/ack can safely repeat. A slow original worker and a reclaiming worker must still produce one order.
+Restart worker. Reclaim idle pending messages after the documented threshold. Validate current reservation/stream associations before finalization; no persistence wait is used. Replayed committed orders are success; completion status/ack can safely repeat. A slow original worker and a reclaiming worker must still produce one order.
 
 ## PostgreSQL outage or unknown commit
 
@@ -61,7 +91,7 @@ node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0
 node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0
 ```
 
-Replay atomically rearms exhausted work only after its recovery delay. Repeating while eligible/running has no effect; a later exhausted budget may be explicitly replayed again. Output “Replay requested” is not proof of completion: poll identifier status, inspect retry metadata and check the database. Lost replay durability replies can be retried safely. Identity conflicts appear in the quarantine hash and require investigation.
+Replay atomically rearms exhausted work only after its recovery delay. Repeating while eligible/running has no effect; a later exhausted budget may be explicitly replayed again. Output “Replay requested” is not proof of completion: poll identifier status, inspect retry metadata and check the database. Lost replay command replies can be retried safely. Identity conflicts appear in the quarantine hash and require investigation.
 
 Defaults: `ORDER_MAX_ATTEMPTS=5` (1–100), `ORDER_RETRY_BASE_MS=1000` (1–60000), `ORDER_RETRY_MAX_MS=60000` (1–3600000). Attempt n waits uniform jitter between half and all of min(cap, base × 2^(n−1)). A reserved attempt interrupted by a crash consumes budget and waits 60 seconds. Pending reclaim also uses a 60-second safety interval. Workers reconnect with 1–2 second loop backoff; each processes sequentially in read/claim batches of ten. Redis retry records retain attempts, nextAt, reason, exhausted and schema version. Neither exhaustion nor quarantine releases inventory.
 

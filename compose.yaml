@@ -46,6 +46,20 @@ services:
       interval: 3s
       timeout: 2s
       retries: 20
+  redis-replica:
+    image: redis:7.4.8-alpine
+    restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 512m
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--replicaof", "redis", "6379", "--replica-read-only", "yes"]
+    volumes: ["redis-replica-data:/data", "./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro"]
+    depends_on:
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli info replication | grep -q 'master_link_status:up'"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
   api:
     <<: *runtime
     build: { context: ., target: api }
@@ -93,3 +107,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  redis-replica-data:

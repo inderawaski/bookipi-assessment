@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it, vi } from 'vitest';
 import { migrate, persistSale } from '../../packages/database/src/index.js';
-import { DurableAdmission, admissionKeys, initializeAdmission } from '../../packages/redis/dist/index.js';
+import { RedisAdmission, admissionKeys, initializeAdmission } from '../../packages/redis/dist/index.js';
 import { createHealthServer } from '../../apps/api/src/health.js';
 import { registerSaleRoutes } from '../../apps/api/src/sales/routes.js';
 import { createOrderConsumer, orderGroup } from '../../apps/worker/src/orders/consumer.js';
@@ -10,7 +10,7 @@ import { testServices } from '../services.js';
 it('accounts independently for acknowledged admissions across two APIs and workers after closing and recovery', async () => {
   const { database, redis } = testServices();
   const apps = [createHealthServer(async () => {}), createHealthServer(async () => {})];
-  const gates = apps.map(() => new DurableAdmission(process.env.TEST_REDIS_URL!));
+  const gates = apps.map(() => new RedisAdmission(process.env.TEST_REDIS_URL!));
   const stops: (() => Promise<void>)[] = [];
   const errors: string[] = [];
   try {
@@ -32,7 +32,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
     const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 86400000);
     try { expect(await post(0, ' First ', 'first')).toEqual({ status: 'PROCESSING', phase: 'queued' }); }
     finally { spy.mockRestore(); }
-    // Sequential durable acknowledgements establish an authoritative prefix before contention.
+    // Sequential primary acknowledgements establish an authoritative prefix before contention.
     expect(await post(1, 'second', 'second')).toEqual({ status: 'PROCESSING', phase: 'queued' });
     const inputs = Array.from({ length: 24 }, (_, i) => ({ identifier: ` Person-${i % 12} `, key: `request-${i}` }));
     const responses = await Promise.all(inputs.map((input, i) => post(i, input.identifier, input.key)));
@@ -82,7 +82,8 @@ it('accounts independently for acknowledged admissions across two APIs and worke
     // Reconcile completed work and start a fresh worker; no replenishment or extra orders.
     await gates[0]!.recover(sale, rows.rows.map(r => ({ identifier: r.user_identifier, admittedAtMs: r.admitted_at.getTime(), orderId: r.id })));
     stops.push(await createOrderConsumer(process.env.TEST_REDIS_URL!, database, gates[0]!, async () => [sale.id], error => errors.push(String(error))));
-    expect(await post(0, 'first', 'first')).toEqual({ status: 'SUCCESS', orderId: rows.rows.find(r => r.user_identifier === 'first')!.id });
+    expect(await post(0, 'first', 'first')).toEqual({ status: 'PROCESSING', phase: 'queued' });
+    expect((await apps[0]!.inject(`/sales/${sale.id}/order?identifier=first`)).json()).toEqual({ status: 'AVAILABLE', order: { status: 'SUCCESS', orderId: rows.rows.find(r => r.user_identifier === 'first')!.id } });
     expect((await post(1, 'FIRST', 'different')).reason).toBe('already_placed');
     expect((await database.query('SELECT id FROM "order" WHERE flash_sale_id=$1', [sale.id])).rowCount).toBe(acknowledged.size);
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');

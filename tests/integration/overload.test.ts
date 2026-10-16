@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { it, expect } from 'vitest';
 import { migrate, persistSale } from '../../packages/database/src/index.js';
-import { DurableAdmission, admissionKeys, assertAdmissionConfiguration } from '../../packages/redis/dist/index.js';
+import { RedisAdmission, admissionKeys, assertAdmissionConfiguration } from '../../packages/redis/dist/index.js';
 import { createHealthServer } from '../../apps/api/src/health.js';
 import { registerSaleRoutes } from '../../apps/api/src/sales/routes.js';
 import { testServices } from '../services.js';
@@ -11,7 +11,7 @@ it('shares last stock and duplicate mappings across independently bounded API in
   await redis.connect();
   const sale = { id: randomUUID(), startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 60000).toISOString(), initialStock: 1 };
   const apps = [createHealthServer(async () => {}), createHealthServer(async () => {})];
-  const admissions = apps.map(() => new DurableAdmission(process.env.TEST_REDIS_URL!, 2));
+  const admissions = apps.map(() => new RedisAdmission(process.env.TEST_REDIS_URL!, 2));
   try {
     await migrate(database); await persistSale(database, sale);
     const keys = admissionKeys(sale.id);
@@ -31,11 +31,11 @@ it('shares last stock and duplicate mappings across independently bounded API in
   } finally { await Promise.all(apps.map(app => app.close())); redis.destroy(); await database.end(); }
 }, 30000);
 
-it('rejects an exhausted durability pool before send and recovers without losing admitted work', async () => {
+it('rejects an exhausted admission pool before send and recovers without losing admitted work', async () => {
   const { redis, database } = testServices();
   await redis.connect();
   const sale = { id: randomUUID(), startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 60000).toISOString(), initialStock: 2 };
-  const gate = new DurableAdmission(process.env.TEST_REDIS_URL!, 1);
+  const gate = new RedisAdmission(process.env.TEST_REDIS_URL!, 1);
   const keys = admissionKeys(sale.id);
   try {
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '2', remaining_stock: '2', configuration_version: '1' });
@@ -53,7 +53,7 @@ it('rejects an exhausted durability pool before send and recovers without losing
 it('times out an exhausted database pool before admission without allocating', async () => {
   const { database, redis } = testServices();
   await redis.connect();
-  const gate = new DurableAdmission(process.env.TEST_REDIS_URL!);
+  const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const app = createHealthServer(async () => {});
   registerSaleRoutes(app, { database, redis, admission: gate, probe: async () => {} });
   const clients = await Promise.all([database.connect(), database.connect()]);

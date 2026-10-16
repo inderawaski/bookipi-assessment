@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { expect, it } from 'vitest';
 import { migrate, persistSale } from '../../packages/database/src/index.js';
-import { DurableAdmission, admissionKeys, initializeAdmission } from '../../packages/redis/dist/index.js';
+import { RedisAdmission, admissionKeys, initializeAdmission } from '../../packages/redis/dist/index.js';
 import { processOrder, orderGroup } from '../../apps/worker/src/orders/consumer.js';
 import { testServices } from '../services.js';
 
@@ -32,14 +32,14 @@ async function killAt(mode: string, boundary: string, saleId: string, entry?: un
 
 it.each([
   ['admission', 'before_send'], ['admission', 'after_send'],
-  ['admission', 'before_durability'], ['admission', 'after_durability'],
-  ...['receipt', 'after_durability', 'before_transaction', 'after_begin', 'before_commit', 'after_commit', 'before_status', 'after_status', 'after_ack'].map(boundary => ['worker', boundary]),
+  ['admission', 'before_acknowledgement'],
+  ...['receipt', 'after_validation', 'before_transaction', 'after_begin', 'before_commit', 'after_commit', 'before_status', 'after_status', 'after_ack'].map(boundary => ['worker', boundary]),
 ])('SIGKILL %s at %s converges without revoking allocation', async (mode, boundary) => {
   const { database, redis } = testServices();
   await redis.connect();
   const sale = { id: randomUUID(), startsAt: new Date(Date.now() + 2000).toISOString(), endsAt: new Date(Date.now() + 3600000).toISOString(), initialStock: 1 };
   const keys = admissionKeys(sale.id);
-  const gate = new DurableAdmission(process.env.TEST_REDIS_URL!);
+  const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   try {
     await migrate(database); await persistSale(database, sale); await initializeAdmission(redis, sale); await gate.recover(sale, []);
     await expect.poll(async () => {

@@ -18,14 +18,13 @@ else
   if now >= tonumber(ARGV[1]) then return redis.error_reply('Missing admission state after opening; operator repair required') end
   redis.call('HSET', KEYS[1], 'starts_at', ARGV[1], 'ends_at', ARGV[2], 'initial_stock', ARGV[3], 'remaining_stock', ARGV[3])
 end
--- Force a write on this connection so WAITAOF also covers an idempotent retry.
+-- Record the schema version on both fresh initialization and idempotent retry.
 redis.call('HSET', KEYS[1], 'configuration_version', '1')
 return 1
 `;
 export async function initializeAdmission(redis: RedisCommands, sale: AdmissionConfiguration) {
   await redis.sendCommand(['EVAL', configure, '1', saleKey(sale.id), ...values(sale)]);
-  const durability = await redis.sendCommand(['WAITAOF', '1', '0', '2000']);
-  if (!Array.isArray(durability) || durability[0] !== 1) throw new Error('Admission configuration durability unconfirmed');
+
 }
 export async function assertAdmissionConfiguration(redis: RedisCommands, sale: AdmissionConfiguration) {
   const actual = await redis.sendCommand(['HMGET', saleKey(sale.id), 'starts_at', 'ends_at', 'initial_stock', 'remaining_stock']);

@@ -32,7 +32,7 @@ for (const { scenario, connections } of jobs) {
   }
   let sampler;
   try {
-    docker(['up', '-d', '--build', '--wait', '--scale', `api=${apiReplicas}`, '--scale', `worker=${workerReplicas}`, 'postgres', 'redis', 'api', 'worker', 'proxy']);
+    docker(['up', '-d', '--build', '--wait', '--scale', `api=${apiReplicas}`, '--scale', `worker=${workerReplicas}`, 'postgres', 'redis', 'redis-replica', 'api', 'worker', 'proxy']);
     writeFileSync(`${output}/compose.yaml`, docker(['config']));
     const sources = ['scripts/stress.mjs', 'scripts/stress/case.mjs', 'scripts/stress/generator.mjs', 'scripts/stress/accounting.mjs', 'scripts/stress/experiments.mjs', 'scripts/stress/readiness.mjs', 'compose.test.yaml', 'compose.stress.yaml', 'deploy/stress-proxy.conf'];
     writeFileSync(`${output}/sources.json`, JSON.stringify(Object.fromEntries(sources.map(path => [path, readFileSync(path, 'utf8')])), null, 2));

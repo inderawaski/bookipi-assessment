@@ -17,8 +17,8 @@ The original assessment is the required scope. High throughput/scalability, faul
 | Reserve at admission | First admitted buyer keeps allocation despite stalled worker | Exhausted/delayed work consumes inventory until repaired |
 | Redis time, start inclusive/end exclusive | One authoritative boundary across API replicas | Assumes synchronized wall clock |
 | Admission window, not completion window | Accepted users remain eligible after closing | Queue may drain after sale ends |
-| AOF everysec plus confirmed persistence | Durable acknowledged placements with batching opportunity | Confirmation latency and disk bottlenecks remain |
-| PostgreSQL final order uniqueness | Defensive replay and unknown-commit protection | Final processing still limited by DB capacity |
+| Primary acknowledgement, AOF everysec and one asynchronous replica | Low-latency PROCESSING without WAITAOF/WAIT | Acknowledged admission may be lost before PostgreSQL commit; no automatic failover |
+| PostgreSQL final order uniqueness plus per-sale stock cap | Defensive replay and no excess committed orders across Redis loss/in-flight commit races | Final writes lock the sale row and serialize per sale |
 | Independent API and worker scaling | Burst handling separate from processing rate | Redis admission limit remains |
 | Bounded pre-admission overload rejection | Protects system and acknowledged work | Some eligible offered traffic may receive retryable busy |
 | Delayed recovery rather than permanent failure | No business reason to revoke admitted allocation | Requires operator visibility and replay |
@@ -32,13 +32,68 @@ A PostgreSQL design can reserve stock and enforce user uniqueness in a short tra
 
 ## Business failure exclusions
 
-V1 has no payment, fraud, shipping eligibility, external inventory or other post-admission rejection dependencies. Infrastructure faults produce delayed processing, not loss of reservation. Eventual success assumes services/manual recovery and intact storage. Immediate admission rejection remains possible for invalid identity, window, stock or duplicate rules.
+V1 has no payment, fraud, shipping eligibility, external inventory or other post-admission rejection dependencies. Worker/database faults delay surviving reservations. Redis crashes/failover may lose an acknowledged reservation before PostgreSQL commit; this is an accepted trade-off. Immediate admission rejection remains possible for invalid identity, window, stock or duplicate rules.
 
 ## Future schema changes
 
 Authentication would introduce user and replace the free-form order identity with an appropriate user foreign key, including an explicit migration/identity policy. Multiple products would introduce product and explicit product/sale/order relationships according to the expanded domain. Neither is implemented in V1.
 
-## Durability and scaling boundary
+## Revised acknowledgement decision (16 October 2026)
+
+The user explicitly chose immediate Redis acknowledgement over admission durability
+waits. The previous WAITAOF contract and its historical measurements are superseded.
+PROCESSING now means the primary accepted the reservation; SUCCESS means PostgreSQL
+committed the order. AOF everysec and one read-only asynchronous replica provide
+background persistence/copying without delaying acknowledgements. No WAIT, WAITAOF,
+Sentinel or automatic failover is used. Current frontend polling can clear a lost
+PROCESSING reservation; it never clears SUCCESS or treats an unavailable read as
+absence. Primary/replica volumes on one Docker host do not provide host redundancy.
+
+[Architecture](architecture.md) and [public contract](public-contract.md) define
+current semantics. [Scale-out measurements](scale-out-results.md) used the previous
+barrier-based design and are historical evidence; no performance improvement is
+assumed until the new design is measured. The user additionally approved the [final PostgreSQL stock guard](admission-loss-crash-race.md)
+after the crash-race regression. Concurrency limits remain configurable and unchanged. Replica count is one; API/worker replication is independent.
+
+## Final stock-cap trade-off (user approved, 16 October 2026)
+
+Removing Redis durability waits allows an acknowledged reservation to disappear
+while its worker already has a PostgreSQL transaction in flight. Recovery can
+observe no committed order, reopen that unit and admit another buyer before the
+old transaction commits. The original regression produced two orders for one unit.
+Redis epoch fencing and per-buyer uniqueness alone do not close this race.
+
+The approved defensive guard locks the existing flash_sale row at READ COMMITTED
+inside every application order transaction. A matching existing order replays
+successfully at full capacity. A new order is inserted only while committed count
+is below initial_stock, with the lock held through commit/rollback. This adds no
+schema/table and no PostgreSQL operation to the Redis acknowledgement path.
+
+The benefit is a final committed-order cap despite Redis admission loss. The cost
+is **serialization of final writes per sale**, additional lookup/count queries and
+possible lock waits/timeouts. Adding workers can improve other processing stages,
+but cannot make same-sale final transactions execute concurrently through this
+critical section. The count query also does more work as a sale's order population
+grows; the measured 100-stock spike does not establish capacity for larger sales.
+Different sales lock different rows.
+
+A conflicting replacement reservation is quarantined and fences new admissions
+for operator reconciliation. This favors no overselling over continued availability
+and fulfillment of every provisional acknowledgement after data loss. No stock is
+silently released. Immediate Redis acknowledgement and its accepted loss risk remain;
+one asynchronous replica provides neither synchronous durability nor automatic failover.
+
+[The reproduced race and approved design](admission-loss-crash-race.md) and
+[final verification](final-stock-cap-results.md) retain the evidence. The final
+10,000-buyer spike used **one API / one worker / one Redis replica** and measured
+approximately 544-ms order p99. Two subsequent 3/1 attempts with the final guard filled 100 units and met order
+latency targets (p99 1.88 and 1.07 seconds), with fewer purchase 504s (673 and 833).
+Both overall runs remain measurement_failed because the final proxy metrics request
+returned no live upstreams, despite successful direct metrics reads from all three
+APIs. See the [follow-up](final-stock-cap-results.md#requested-3-api--1-worker-follow-up).
+The earlier WAITAOF scale-out matrix remains separate historical evidence.
+
+## Historical durability and scaling boundary (superseded)
 
 Acknowledged admissions survive local service/container crashes with persistent storage intact. Volume loss, disk corruption, host/region redundancy and geographically distributed fairness are excluded. At larger scale, partitioned stock or edge admission may help but changes ordering/consistency trade-offs. Document actual measured limits and a credible future design without pretending V1 implements it.
 
@@ -74,7 +129,7 @@ Recovery uses the Redis run_id fence, shared across replicas, with per-process r
 
 The durability library keeps missing identifiers confirming because recovery fencing does not exclude delayed commands. The user-approved public revision defines NOT_ORDERED as placement not currently confirmed, with `confirmation_uncertain` on unconfirmed submissions/known reservations. The UI retains the key, continues polling and re-enables Buy Now with a retry message; empty lookup cannot erase confirmed progress. This trades definitive negative semantics for actionable retry without inventing a second admission store. See [architecture](architecture.md#public-uncertainty-semantics-user-approved-revision). Durable rejection still binds one request key; workers and durability guarantees are unchanged.
 
-## Measured limits, not design promises
+## Historical measured limits, not current performance promises
 
 [DEV-19 results](stress-results.md) and their raw artifacts are the measurement authority. On the shared Apple M4 Pro / 24 GiB host with Docker's roughly 7.748 GiB VM, three of five prescribed workloads have valid one-second dispatch and passing invariants. Both 100,000-request workloads remain dispatch-invalid; checkpoint F is pending. This prototype has not demonstrated the full assessment burst target.
 

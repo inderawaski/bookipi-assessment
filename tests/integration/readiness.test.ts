@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { expect, it, vi } from 'vitest';
 import { createDatabase, migrate, persistSale } from '../../packages/database/dist/index.js';
-import { DurableAdmission, initializeAdmission, saleKey } from '../../packages/redis/dist/index.js';
+import { RedisAdmission, initializeAdmission, saleKey } from '../../packages/redis/dist/index.js';
 import { startService as startApi } from '../../apps/api/src/service.js';
 import { startService as startWorker } from '../../apps/worker/src/service.js';
 import { testServices } from '../services.js';
@@ -32,7 +32,7 @@ it('shares overlapping probes per instance and reconciles across two APIs and a 
     Object.assign(process.env, { DATABASE_URL: url.href, REDIS_URL: process.env.TEST_REDIS_URL, HOST: '127.0.0.1' });
     for (let i = 0; i < 2; i++) { process.env.API_PORT = await freePort(); apps.push(await startApi('api')); }
     process.env.WORKER_PORT = await freePort(); apps.push(await startWorker('worker'));
-    const recover = vi.spyOn(DurableAdmission.prototype, 'recover');
+    const recover = vi.spyOn(RedisAdmission.prototype, 'recover');
     const sale = { id: randomUUID(), startsAt: new Date(Date.now() + 60000).toISOString(), endsAt: new Date(Date.now() + 120000).toISOString(), initialStock: 10000 };
     await persistSale(database, sale); await initializeAdmission(redis, sale);
     const responses = await Promise.all(apps.flatMap(app => Array.from({ length: 8 }, () => app.inject('/health/ready'))));

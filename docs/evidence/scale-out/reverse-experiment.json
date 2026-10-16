@@ -1,0 +1,33 @@
+{
+  "startedAt": "2026-10-16T11:10:21.426706+00:00",
+  "workload": "spike-10k",
+  "connections": 10000,
+  "maxConnections": 10000,
+  "purpose": "Reverse order: 3/3 before 3/1 to investigate run-order variability",
+  "runs": [
+    {
+      "api": 3,
+      "workers": 3,
+      "startedAt": "2026-10-16T11:10:21.427975+00:00",
+      "endedAt": "2026-10-16T11:12:03.901880+00:00",
+      "exitCode": 1,
+      "projects": [
+        "test-results/stress/flash-test-6f8fe1c0-1a94-4590-923b-8b7abe653137"
+      ],
+      "log": "docs/evidence/scale-out/reverse-api3-worker3.log",
+      "socketRecoveryWaitSeconds": 0
+    },
+    {
+      "api": 3,
+      "workers": 1,
+      "startedAt": "2026-10-16T11:12:03.925232+00:00",
+      "endedAt": "2026-10-16T11:15:31.521438+00:00",
+      "exitCode": 1,
+      "projects": [
+        "test-results/stress/flash-test-54210645-0e92-460a-927b-ebc4439ad79b"
+      ],
+      "log": "docs/evidence/scale-out/reverse-api3-worker1.log"
+    }
+  ],
+  "endedAt": "2026-10-16T11:15:31.529398+00:00"
+}

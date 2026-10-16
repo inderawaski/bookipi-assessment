@@ -1,0 +1,15 @@
+{
+  "initialStock": 1,
+  "visibleBeforeRecovery": [],
+  "orders": [
+    {
+      "user_identifier": "first"
+    },
+    {
+      "user_identifier": "second"
+    }
+  ],
+  "secondResult": {
+    "id": "f35a9031-6e69-4f55-b617-46cba64feb37"
+  }
+}

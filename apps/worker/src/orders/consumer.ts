@@ -1,17 +1,17 @@
 import { correlation, type Metrics } from '@flash/operations';
 import { randomUUID } from 'node:crypto';
-import { persistOrder, OrderConflictError, type createDatabase } from '@flash/database';
-import { admissionKeys, createRedisConnection, DurableAdmission, saleKey, finishAttempt, claimAttempt, delayAttempt, defaultRetryPolicy, type RetryPolicy } from '@flash/redis';
+import { persistOrder, OrderConflictError, OrderCapacityError, type createDatabase } from '@flash/database';
+import { admissionKeys, createRedisConnection, RedisAdmission, saleKey, finishAttempt, claimAttempt, delayAttempt, defaultRetryPolicy, type RetryPolicy } from '@flash/redis';
 
 export const orderGroup = 'orders';
-// Far above the 3s durability deadline and bounded DB statements. Correctness still relies
+// Far above the 3s admission deadline and bounded DB statements. Correctness still relies
 // on PostgreSQL uniqueness if a paused original resumes after reclamation.
 export const reclaimIdleMs = 60000;
 type Connection = ReturnType<typeof createRedisConnection>;
 export interface StreamOrder { id: string; message: Record<string, string> }
 
 export async function processOrder(database: ReturnType<typeof createDatabase>, redis: Connection,
-  admission: DurableAdmission, saleId: string, entry: StreamOrder, failpoint?: (boundary: string) => Promise<void>) {
+  admission: RedisAdmission, saleId: string, entry: StreamOrder, failpoint?: (boundary: string) => Promise<void>) {
   if (failpoint && process.env.NODE_ENV !== 'test') throw new Error('Failpoints require test mode');
   await failpoint?.('receipt');
   const fields = entry.message;
@@ -23,8 +23,8 @@ export async function processOrder(database: ReturnType<typeof createDatabase>, 
       throw new OrderConflictError('Invalid stream identity metadata');
     }
     const confirmation = await admission.lookup(saleId, fields.identifier);
-    if (confirmation.status !== 'durable') throw new Error('Admission durability unavailable');
-    await failpoint?.('after_durability');
+    if (confirmation.status !== 'present') throw new Error('Admission validation unavailable');
+    await failpoint?.('after_validation');
     const reservation = confirmation.reservation;
     if (reservation.requestKey !== fields.request_key || reservation.streamId !== entry.id) {
       throw new OrderConflictError('Conflicting admission identity');
@@ -40,13 +40,17 @@ export async function processOrder(database: ReturnType<typeof createDatabase>, 
     return orderId;
   } catch (error) {
     if (!(error instanceof OrderConflictError)) throw error;
+    if (error instanceof OrderCapacityError) {
+      // Do not admit more buyers against Redis stock that disagrees with committed orders.
+      await redis.hSet(saleKey(saleId), 'admission_fault', 'committed_order_capacity');
+    }
     // Retain pending work and its raw stream data for operator investigation.
     await redis.hSet(quarantine, entry.id, error.message);
   }
 }
 
 export async function createOrderConsumer(url: string, database: ReturnType<typeof createDatabase>,
-  admission: DurableAdmission, sales: () => Promise<string[]>, report: (error: unknown) => void, policy: RetryPolicy = defaultRetryPolicy, metrics?: Metrics) {
+  admission: RedisAdmission, sales: () => Promise<string[]>, report: (error: unknown) => void, policy: RetryPolicy = defaultRetryPolicy, metrics?: Metrics) {
   const blocking = createRedisConnection(url, 'blocking-consumer');
   const commands = createRedisConnection(url, 'commands');
   try { await Promise.all([blocking.connect(), commands.connect()]); }

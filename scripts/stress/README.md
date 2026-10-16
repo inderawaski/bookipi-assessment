@@ -1,128 +1,77 @@
-# One-second burst measurements (DEV-18)
+# Flash-sale stress suite
 
-Run `pnpm test:harness` for accounting and real TCP timing tests. Run
-`pnpm test:stress stock100-1k` for the smallest full pipeline check, or
-`pnpm test:stress` for all prescribed and additional cases. Docker must be running. Each case creates
-its own randomly named `flash-test-*` Compose project and volumes, migrates and
-initializes a fresh sale **before opening**, and waits on Redis TIME. Cleanup
-explicitly deletes only that project's test volumes. No demonstration data is reset.
+Run `pnpm test:harness` for harness regression tests. Run `pnpm test:stress`
+for all workloads, or supply scenario names to select cases. Docker must be running.
+Each attempt uses a fresh isolated `flash-test-*` Compose project and sale; cleanup
+removes only that project's test volumes.
 
-The five required scenarios are named `stock100-1k`, `stock100-10k`, `duplicates`,
-`stock100-100k`, and `stock10k-100k`. `duplicates` uses exactly 100 identifiers,
-100 times each, with 10,000 distinct request keys. Additional `new-key-duplicates`
-and `same-key-retries` cases use identical identifier distributions but respectively
-1,000 distinct keys and 100 repeated keys. These retries are scheduled requests in
-the measured burst, not automatic retries after errors.
+## Required workloads
 
-The generator uses Node's HTTP client and preconnects TCP sockets before the clock
-starts. By default it allocates up to 10,000 sockets and reuses them for larger bursts. Unlike closed-loop VUs, it
-schedules offered work independently of responses, over 900 ms of a 1,000 ms
-window. Request `finish` timestamps record the point after connection acquisition
-when the entire request has been handed to the OS for transmission. This is a
-conservative dispatch upper bound; it is not a packet capture or proof of server
-receipt. Loopback server tests independently record arrival times and demonstrate
-that a queued request is rejected as invalid even when its iteration began on time.
+| Name | Stock | Requests | Unique buyers | Arrival window |
+| --- | ---: | ---: | ---: | --- |
+| `no-oversell` | 10 | 100 | 100 | synchronized release, writes within 1 second |
+| `duplicates` | 10 | 100 | 10 | synchronized release, writes within 1 second |
+| `sufficient-stock` | 1,000 | 1,000 | 1,000 | 1 second |
+| `burst-10s` | 100 | 5,000 | 5,000 | 10 seconds |
+| `burst-3s` | 100 | 5,000 | 5,000 | 3 seconds |
+| `burst-1s` | 100 | 5,000 | 5,000 | 1 second |
+| `spike-10k` | 100 | 10,000 | 10,000 | 1 second |
 
-`STRESS_CONNECTIONS=100 pnpm test:stress stock100-1k` deliberately reduces socket
-capacity. An invalid run automatically queues a rerun with twice as many sockets (up to
-30,000 or the request count) in a **fresh isolated project**. All attempts are
-retained. A run that still fails at that capacity exits unsuccessfully:
-raise file descriptor/ephemeral port limits or move to a larger generator host,
-then rerun the same command. Do not quote an invalid run as achieved throughput.
-100,000 simultaneous connections from one source address would exceed its TCP
-port budget; larger bursts reuse sockets and still require every write to finish
-inside the window. The runner makes scheduling limitations visible.
-Measured execution and scaling evidence is in [DEV-19 results](../../docs/stress-results.md).
+Duplicates use ten distinct request keys per buyer. `same-key-retries` repeats
+one key per buyer to exercise idempotent retries separately. `healthy` checks
+full allocation with eight buyers and eight units. Opening, closing, worker-crash,
+closing-worker-crash and repeated-burst recovery experiments remain available.
 
-Artifacts are under `test-results/stress/<project>/<scenario>/`:
+The sufficient-stock burst measures saturation, allocation count, HTTP latency and committed-order visibility latency;
+it does not require full allocation or assert the spike's latency SLO.
 
-- `result.json`: settings, commit SHA, sale times, offered/dispatched/completed,
-  dropped writes/iterations, invalid reasons, outcomes, p50/p95/p99 response
-  latency, separate all-responses-within-one-second flag, every scheduled/write/
-  completion timestamp, input keys, responses, generator CPU, memory, I/O bytes,
-  event loop delay, queue drain duration and final DB/Redis evidence/invariants.
-- `host.json`, `network-after.txt`: generator hardware, runtime, working tree state,
-  descriptor limits and network counters before/after (host-wide counters include
-  other traffic). `compose.yaml` records service resource limits and configuration.
-- `resources.jsonl`: Docker CPU, memory, network and block I/O samples throughout
-  the case; `services.log` retains application logs. `resources-errors.log`, if
-  present, records sampler diagnostics.
-- Metrics before/after retain API and worker barrier latency sums/counts, backlog,
-  pending/delayed work, connection pools and process resources. Barrier latency
-  is an aggregate mean from the sum/count delta, not a percentile measurement.
+## Healthy spike acceptance
 
-A setup/preconnect error is explicitly `invalid_generator_or_setup`. Missing
-writes, writes outside the window, or inconsistent accounting invalidate dispatch.
-Response timeouts/errors are counted independently; timely dispatch is valid even
-when responses take longer than a second. A passing result also requires drained
-work, stock conservation, unique allocations/orders, matching identifier/request
-mappings and admission timestamps, and preservation of every durable acknowledgement.
-Bounded overload rejections can make allocation lower than stock; no fill-rate
-assumption is built into the invariant checks.
+Under the recorded resource budget, `spike-10k` must dispatch every request within
+one second, sell all 100 units, avoid overselling and duplicate orders, and preserve
+every acknowledged reservation during this healthy test. Admission-to-durable-order p99 must be **under
+2,000 ms**, and every admitted order must complete **within 10,000 ms**. Empty
+admissions, missing timing observations or an observer failure cannot pass.
+Recovery experiments do not use these healthy-operation deadlines.
 
-Queue drain starts after burst responses finish and is bounded at 300 seconds.
-Reconciliation reads PostgreSQL and Redis directly. No purchase POSTs are issued
-after the scheduled burst. Readiness probes and metrics GETs run outside the burst; DEV-19 adds concurrent order-status polling.
-Redis uses the same AOF everysec/noeviction configuration and application WAITAOF
-barriers as production; the harness asserts these settings before starting.
+The harness samples committed orders through an independent PostgreSQL connection
+approximately every 25 ms during dispatch and drain. PostgreSQL `clock_timestamp()`
+records first observed visibility on the database clock. This is a conservative
+upper bound on commit latency including sampling/query delay; `completed_at` is
+assigned before commit and is not used as proof of durability timing. Redis
+admission timestamps and PostgreSQL clocks must be synchronized (the local Compose
+services share the Docker VM clock). Observations and p50/p95/p99/max are retained
+as `orderVisibility` in `result.json`. Observer load is part of this measurement.
 
-## DEV-19 experiments
+## Dispatch and evidence
 
-The harness now routes through a dedicated Nginx proxy, so replica comparisons
-exercise a common ingress. This measurement profile uses **one proxy CPU and
-512 MiB**, one Nginx worker and 65,536 connection slots; it is a separate recorded
-budget from the demonstration proxy. Application durability and overload settings
-remain unchanged. `STRESS_API_REPLICAS` and `STRESS_WORKER_REPLICAS` accept 1–8.
+TCP sockets are preconnected before dispatch. Synchronized cases schedule every
+request at zero; other cases spread offered work independently of responses over
+90% of the declared window, leaving dispatch headroom. Every request write must
+finish strictly before that window ends. This is an OS-write upper bound, not proof
+of server receipt. Report actual dispatch spread for synchronized releases.
 
-```sh
-pnpm test:stress stock100-1k stock100-10k duplicates stock100-100k stock10k-100k
-pnpm test:stress healthy sufficient-stock opening closing closing-worker-crash worker-crash repeated
-STRESS_API_REPLICAS=3 STRESS_WORKER_REPLICAS=1 pnpm test:stress sufficient-stock
-STRESS_API_REPLICAS=3 STRESS_WORKER_REPLICAS=3 pnpm test:stress sufficient-stock
-node scripts/stress/report.mjs test-results/stress/flash-test-<uuid>
-```
+Invalid dispatch retries with increased sockets in fresh projects, retaining all
+attempts. `STRESS_CONNECTIONS` and `STRESS_MAX_CONNECTIONS` control socket capacity.
+`STRESS_API_REPLICAS` and `STRESS_WORKER_REPLICAS` accept 1–8. Defaults are one API
+and one worker; resource limits and durability settings come from `compose.test.yaml`
+and `compose.stress.yaml`. Each result retains resolved Compose configuration,
+replica counts, host details, source snapshots, request timings/outcomes, HTTP
+percentiles, service logs, resource samples and final Redis/PostgreSQL reconciliation.
+Do not compare runs with different budgets as equivalent capacity results.
 
-`healthy` offers eight distinct buyers with eight units and asserts full allocation.
-`sufficient-stock` offers 1,000 distinct buyers with 1,000 units, allowing saturation
-at the default bounded admission concurrency instead of mostly sold-out reads.
-Opening/closing experiments preconnect first, wait on Redis TIME, then aim to start
-450 ms before the boundary. The actual first/last dispatch and Redis admission
-timestamps must be inspected to confirm a straddle; a setup delay is not evidence
-of a boundary test. Every run checks `startsAt <= admitted_at < endsAt`.
-Boundary cases replay an admitted key after closure and require a completed order.
+All cases require stock conservation, unique allocations/orders, matching mappings
+and admission timestamps, completed admitted work and preservation of acknowledged
+reservations during healthy operation. Drain reconciliation is bounded at 300 seconds; allowing this
+diagnostic drain does not relax the spike's ten-second per-order deadline.
+Readiness checks cover every API and worker before dispatch. Redis keeps AOF
+everysec/noeviction and one asynchronous read-only replica; application operations
+use neither WAITAOF nor WAIT. Healthy-run acknowledgement preservation is an
+observed invariant, not a crash-safe admission guarantee. Transport/proxy errors and explicit
+busy/sold-out outcomes remain separately reported; no new HTTP SLO is assumed.
 
-Polling runs concurrently with dispatch and drain at up to ten GETs/second for
-`person-0`; each status/error and timestamp is retained. `repeated` makes three
-bursts against the same sale with the same input keys, then reconciles all admissions
-and acknowledged identities. These repeated bursts test replay, not three fresh
-populations. `worker-crash` and `closing-worker-crash` request SIGKILL 200 ms after
-dispatch begins, wait two seconds, start the worker, and drain. Actual kill/recovery
-wall timestamps are recorded because Docker control latency can vary. The latter
-case exercises recovery/completion after sale closure. Redis and DB failure
-boundaries remain covered by `pnpm test:failure`.
-
-The report command takes explicit isolated project paths and writes compressed
-copies of **all** their files to `docs/evidence/dev19`, with an uncompressed SHA-256
-manifest and compact summaries. Include failed attempts. Raw request timestamps
-remain in `result.json.gz`; decompress with `gzip -dc`. The user confirmed human checkpoint F approval on 16 October 2026; see the
-[reviewer record](../../docs/submission-audit.md). Invalid dispatch attempts remain invalid performance evidence.
-
-The opening case uses 16 distinct buyers/units so pre-opening requests do not
-occupy every bounded admission slot for the entire post-opening half. This changes
-the additional boundary workload only; the five prescribed workloads are fixed.
-
-For a host with a small ephemeral-port budget, explicitly cap a calibration run:
-`STRESS_CONNECTIONS=1000 STRESS_MAX_CONNECTIONS=1000 pnpm test:stress stock100-10k duplicates stock100-100k stock10k-100k`.
-The cap controls automatic socket-capacity retries only; dispatch still requires
-**every** offered request write inside 1,000 ms. Invalid capped runs exit nonzero.
-`preconnectMs` measures TCP setup; `readyWaitMs` separately records the wait for
-Redis's target time. Earlier DEV-19 attempts recorded their sum as `preconnectMs`.
-
-After a large socket attempt, allow the host's ephemeral ports/TIME_WAIT state to
-recover before comparing replicas. For sufficient-stock replica calibration,
-`STRESS_CONNECTIONS=100 STRESS_MAX_CONNECTIONS=100` avoids allocating thousands
-of idle sockets; keep that setting identical across the replica comparisons.
-
-## Readiness before dispatch
-
-After initializing a new sale, setup explicitly checks every API and worker replica through its direct endpoint. A shared ten-second setup deadline bounds retries of unavailable or failed responses; HTTP success must include `status: ready`. Each endpoint, timestamp, HTTP status and returned readiness state/error is retained in `result.json` as `readinessAttempts`. Permanent failures remain invalid setup attempts with endpoint diagnostics. This wait places no purchases, changes no sale times and does not relax the one-second dispatch or boundary-straddle checks. PostgreSQL container health checks use authenticated TCP SQL so its temporary initialization server cannot prematurely satisfy application readiness.
+Artifacts live under `test-results/stress/<project>/<scenario>/`. Use
+`node scripts/stress/report.mjs <project-path>` to archive complete attempts.
+The measurements in [DEV-19 results](../../docs/stress-results.md) describe the
+previous barrier-based design and workloads and are historical evidence, not passes
+of this revised suite or current acknowledgement contract. The former 100,000-request scenarios are no longer required.

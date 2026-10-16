@@ -6,7 +6,7 @@ A single-product flash sale demonstration using TypeScript, Fastify, React, Redi
 
 Enter a nonempty user identifier and select Buy Now during the sale. Identifiers are trimmed and lowercased; they are not authenticated accounts. Each identifier may secure one unit per sale.
 
-Requests are admitted in authoritative Redis execution order. Stock is reserved at admission, protecting accepted buyers from slow processing. The sale window is start-inclusive/end-exclusive and governs admission, not completion. A placed order is acknowledged only after local Redis persistence is confirmed. Uncertain requests show processing/confirming. Internal failures delay processing without revoking reservations.
+Requests are admitted in authoritative Redis execution order. Stock is reserved at admission, separating allocation from slow processing. The sale window is start-inclusive/end-exclusive and governs admission, not completion. The API returns PROCESSING immediately after the Redis primary acknowledges the reservation. It does not wait for disk or replica persistence. Redis crashes/failover can lose an acknowledged reservation; the page reports a missing reservation and permits retry. Worker/database failures retain surviving reservations for retry.
 
 The page reports upcoming, active, ended and sold out; explicit duplicate feedback; and processing/success. Accidental duplicate submissions reuse one in-memory request key. Refresh uses identifier-based lookup. There is no payment, authentication, catalogue, quantity selector or admin interface.
 
@@ -14,11 +14,11 @@ The page reports upcoming, active, ended and sold out; explicit duplicate feedba
 
 See [architecture](<docs/architecture.md>) for the system diagram and complete flow, [decisions](<docs/decisions.md>) for rationale, [recovery](<docs/recovery.md>) for failure handling, and [testing](<docs/testing.md>) for test strategy and results.
 
-Redis uses AOF everysec with explicit durability confirmation before acknowledging placement. This trades acknowledgement latency for durability and persistence batching. API and worker instances scale independently; Redis remains the single-sale admission limit. PostgreSQL uses an order uniqueness constraint for safe replay. Local service crashes with intact volumes are handled; storage loss and host/regional redundancy are excluded.
+Redis uses AOF everysec and one asynchronous read-only replica. No WAITAOF or WAIT is used by the application; this explicitly trades crash-safe admission acknowledgements for lower latency. The replica has its own volume but provides no automatic failover or zero-loss guarantee. API and worker instances scale independently; Redis remains the single-sale admission limit. PostgreSQL uses an order uniqueness constraint for safe replay and a per-sale transaction lock/final stock cap to prevent excess committed orders after Redis admission loss. PostgreSQL commits remain durable; pre-commit Redis acknowledgements can be lost. Reconciliation fences inconsistent state rather than guessing stock. Host/regional redundancy is excluded.
 
 ## Prerequisites
 
-Validated environment: macOS arm64 (Darwin 25.5.0), Apple M4 Pro / 24 GiB, Docker Desktop 4.88.1, Engine 29.7.2, Compose 5.4.0; Docker VM 12 CPUs / 7.748 GiB. This is measured host configuration, not a minimum resource guarantee. Linux containers are required; other hosts need their own verification. Images pin Node 22.23.2, PostgreSQL 18.3, Redis 7.4.8 (supports WAITAOF) and Nginx 1.28.2. Install local Node 22.23.2 and pnpm 11.25.0 for operator scripts/tests. Git and a running Docker daemon are required. Free localhost ports 8080, 5432 and 6379; browser tests additionally use 4173.
+Validated environment: macOS arm64 (Darwin 25.5.0), Apple M4 Pro / 24 GiB, Docker Desktop 4.88.1, Engine 29.7.2, Compose 5.4.0; Docker VM 12 CPUs / 7.748 GiB. This is measured host configuration, not a minimum resource guarantee. Linux containers are required; other hosts need their own verification. Images pin Node 22.23.2, PostgreSQL 18.3, Redis 7.4.8 and Nginx 1.28.2. Install local Node 22.23.2 and pnpm 11.25.0 for operator scripts/tests. Git and a running Docker daemon are required. Free localhost ports 8080, 5432 and 6379; browser tests additionally use 4173.
 
 ## Build and run
 
@@ -33,7 +33,7 @@ cd bookipi-assessment
 cp .env.example .env
 pnpm install --frozen-lockfile
 pnpm build
-docker compose up -d --wait postgres redis
+docker compose up -d --wait postgres redis redis-replica
 pnpm db:migrate
 ```
 
@@ -64,7 +64,7 @@ Configuration is idempotent and cannot replenish inventory on restart. Times and
 
 ## Tests
 
-See [testing commands, coverage and evidence](docs/testing.md). Run `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test`, `pnpm test:integration`, `pnpm exec playwright install chromium`, `pnpm test:browser`, `pnpm test:failure` and `pnpm test:stress stock100-1k`. Service/stress runners create random isolated projects. Integration/stress cleanup deletes only their disposable volumes; failure runs retain their own volumes. Browser tests use stub HTTP and start Vite automatically.
+See [testing commands, coverage and evidence](docs/testing.md). Run `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test`, `pnpm test:integration`, `pnpm exec playwright install chromium`, `pnpm test:browser`, `pnpm test:failure` and `pnpm test:stress no-oversell`. Service/stress runners create random isolated projects. Integration/stress cleanup deletes only their disposable volumes; failure runs retain their own volumes. Browser tests use stub HTTP and start Vite automatically.
 
 The stress suite dispatches 1k, 10k and 100k-request scenarios within one second, including 100-stock and 10k-stock cases and duplicate identifiers. Additional tests cover opening/closing boundaries, multi-instance operation, overload and crash recovery. Actual dispatch timing validates the generator; response completion/queue drain are separate measurements.
 

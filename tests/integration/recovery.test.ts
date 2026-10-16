@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { migrate, persistSale, persistOrder } from '../../packages/database/src/index.js';
-import { DurableAdmission, admissionKeys, saleKey, claimAttempt, delayAttempt, replayOrder } from '../../packages/redis/dist/index.js';
+import { RedisAdmission, admissionKeys, saleKey, claimAttempt, delayAttempt, replayOrder } from '../../packages/redis/dist/index.js';
 import { createDatabase } from '../../packages/database/src/index.js';
 import { createOrderConsumer } from '../../apps/worker/src/orders/consumer.js';
 import { testServices } from '../services.js';
@@ -14,7 +14,7 @@ it('retains exhausted allocation, replays once, repairs missing work and complet
     await persistSale(database, sale);
     const keys = admissionKeys(sale.id), prefix = saleKey(sale.id);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
-    const gate = new DurableAdmission(process.env.TEST_REDIS_URL!);
+    const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
     const entry = (await redis.xRange(keys[4], '-', '+'))![0]!;
@@ -37,7 +37,7 @@ it('retains exhausted allocation, replays once, repairs missing work and complet
     expect((await gate.lookup(sale.id, 'person')).status).toBe('confirming');
     await gate.recover(sale, []);
     const restored = await gate.lookup(sale.id, 'person');
-    expect(restored.status).toBe('durable');
+    expect(restored.status).toBe('present');
     const admittedAtMs = Number(entry.message.admitted_at_ms);
     const orderId = await persistOrder(database, { saleId: sale.id, identifier: 'person', admittedAtMs });
     await gate.recover(sale, [{ identifier: 'person', admittedAtMs, orderId }]);
@@ -62,7 +62,7 @@ it('exhausts during database outage and resumes once after repeated replay and w
     await persistSale(database, sale);
     const keys = admissionKeys(sale.id), prefix = saleKey(sale.id);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
-    const gate = new DurableAdmission(process.env.TEST_REDIS_URL!);
+    const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
     const entry = (await redis.xRange(keys[4], '-', '+'))![0]!;

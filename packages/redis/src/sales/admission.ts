@@ -7,7 +7,7 @@ export function admissionKeys(saleId: string): [string, string, string, string, 
   return [prefix, `${prefix}:identifiers`, `${prefix}:requests`, `${prefix}:reservations`, `${prefix}:stream`];
 }
 export interface Reservation { requestKey: string; admittedAtMs: number; streamId: string }
-/** Reserved is internal evidence, not a durable placement acknowledgement. */
+/** A primary-memory acknowledgement; it may be lost before persistence/replication. */
 export type AdmissionResult =
   | { status: 'reserved'; reservation: Reservation; replay: boolean }
   | { status: 'already_placed'; reservation: Reservation }
@@ -15,7 +15,7 @@ export type AdmissionResult =
 export class AdmissionUncertainError extends Error {
   constructor(cause: unknown) { super('Admission outcome uncertain; reconcile before resolving', { cause }); }
 }
-/** @internal Volatile evidence only. Public placement and workers must use DurableAdmission. */
+/** @internal Volatile evidence only. Public placement and workers must use RedisAdmission. */
 export async function admitPurchase(redis: { sendCommand(args: string[]): Promise<unknown> }, saleId: string, input: PurchaseInput): Promise<AdmissionResult> {
   const payload = normalizePurchase(saleId, input);
   try {

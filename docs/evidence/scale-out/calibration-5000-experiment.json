@@ -1,0 +1,28 @@
+{
+  "startedAt": "2026-10-16T08:18:48.395270+00:00",
+  "workload": "spike-10k",
+  "connections": 5000,
+  "maxConnections": 5000,
+  "runs": [
+    {
+      "api": 1,
+      "workers": 1,
+      "startedAt": "2026-10-16T08:18:48.396451+00:00",
+      "endedAt": "2026-10-16T08:21:29.678191+00:00",
+      "exitCode": 1,
+      "projects": [
+        "test-results/stress/flash-test-9622040e-5352-40f7-91c1-687d203222c9"
+      ],
+      "log": "docs/evidence/scale-out/comparison-api1-worker1.log"
+    },
+    {
+      "api": 3,
+      "workers": 1,
+      "projects": [
+        "test-results/stress/flash-test-3b02e8c6-0444-4ddd-bf22-7e942f1fbdf1"
+      ],
+      "log": "docs/evidence/scale-out/comparison-api3-worker1.log",
+      "note": "Controller stopped launching further 5000-socket cases; active child completed. See log/result for status."
+    }
+  ]
+}

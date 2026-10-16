@@ -1,0 +1,104 @@
+[
+  {
+    "path": "flash-test-83dabb53-05a3-49be-9211-d60378a724da/spike-10k/compose.yaml.gz",
+    "originalBytes": 5659,
+    "sha256": "8169685f0f1d9d313be51af911dda9c6c263bae05699fcba02d7921696884dcf"
+  },
+  {
+    "path": "flash-test-83dabb53-05a3-49be-9211-d60378a724da/spike-10k/host.json.gz",
+    "originalBytes": 39489,
+    "sha256": "e0ba3674876005da3b0481ba48b250f19686fad64b49cde3817f28458f03c57b"
+  },
+  {
+    "path": "flash-test-83dabb53-05a3-49be-9211-d60378a724da/spike-10k/network-after.txt.gz",
+    "originalBytes": 26040,
+    "sha256": "3135fb4435bb5f2cbe93a8a3b73d2a87f63f835a093ec6696659284f99f9e551"
+  },
+  {
+    "path": "flash-test-83dabb53-05a3-49be-9211-d60378a724da/spike-10k/resources.jsonl.gz",
+    "originalBytes": 66575,
+    "sha256": "1c1746d7ec021abdd5b9f0dda203e7b8fa262e14140046fd2c64ddf7c89f15bd"
+  },
+  {
+    "path": "flash-test-83dabb53-05a3-49be-9211-d60378a724da/spike-10k/result.json.gz",
+    "originalBytes": 3910547,
+    "sha256": "93c8e98e9702c518f70445a457f0421cac093899759027c6b4fd820735802195"
+  },
+  {
+    "path": "flash-test-83dabb53-05a3-49be-9211-d60378a724da/spike-10k/services.log.gz",
+    "originalBytes": 2573260,
+    "sha256": "f18c236b5825ca7216f901fe63e5fda7feb1919735cc5e221f6ee8a1f4913679"
+  },
+  {
+    "path": "flash-test-83dabb53-05a3-49be-9211-d60378a724da/spike-10k/sources.json.gz",
+    "originalBytes": 37951,
+    "sha256": "86df61c058a8da9dfa516877f872098b648e4c1f875728adb8198f4cc98e6c97"
+  },
+  {
+    "path": "implementation-sources.json.gz",
+    "originalBytes": 393803,
+    "sha256": "d0065dab7abe4f262120a827385fc376a31825765e04261190e7db218f5af512"
+  },
+  {
+    "path": "integration.log.gz",
+    "originalBytes": 23097,
+    "sha256": "400d9ea7e92eaca208b341c11ecdcc71834173e9b5c283649de80997b15d2aaa"
+  },
+  {
+    "path": "failure.log.gz",
+    "originalBytes": 7831,
+    "sha256": "7df81a0b97d3f7f59e951ff62656a434f4bb31b2b55bb01a09c6942914d41a72"
+  },
+  {
+    "path": "typecheck.log.gz",
+    "originalBytes": 1243,
+    "sha256": "88ddedb2b9f25a3cdf7034eb38a9bbd1efeb339b74fb3f45f7d748f62655b132"
+  },
+  {
+    "path": "build.log.gz",
+    "originalBytes": 1116,
+    "sha256": "7de81ffe5596a94b8bf3e951bbfa84f25cc6ff0c27ba1e72162c9b1a20d960a6"
+  },
+  {
+    "path": "lint.log.gz",
+    "originalBytes": 11,
+    "sha256": "050c69da23536758722729aeda55a8d0fb9d557495ef6d33d70873a3b64a71c1"
+  },
+  {
+    "path": "harness.log.gz",
+    "originalBytes": 4584,
+    "sha256": "e35b6247d1ad9387d079ec3fef1e79b290e20c59bd28f211b4636610fd2d40c3"
+  },
+  {
+    "path": "spike.log.gz",
+    "originalBytes": 604,
+    "sha256": "c75ca36ebb64eaec2481700438bec2bb4d7c11997e82806d0f3bc0eda8748681"
+  },
+  {
+    "path": "ack-tests.log.gz",
+    "originalBytes": 204,
+    "sha256": "6b64bb24dcd5e5ba4fcca84d84448f84bb762307aa51b61d4e150e9c390d8192"
+  },
+  {
+    "path": "mutation.log.gz",
+    "originalBytes": 1501,
+    "sha256": "5da3f3f8af62ce90f0a14e69600b71b357818b1c5032bc129296987d7195a636"
+  },
+  {
+    "path": "failure-results.json.gz",
+    "originalBytes": 7881,
+    "sha256": "cc045813357c132042d805c5cf30ac2ab174a2db123ef06d111113967559e560"
+  },
+  {
+    "path": "crash-race.json",
+    "originalBytes": 239,
+    "sha256": "d8f9b69973160bb463df62dd43c35d919f79e64a1e0a3a93fec72088e67be185",
+    "compressed": false
+  },
+  {
+    "path": "crash-race.log.gz",
+    "originalBytes": 6236,
+    "sha256": "fe281a802ce37ee8219c82564169c922c1e0ad0290ff7c60983fbe3c9703f324",
+    "compressed": true
+  }
+]

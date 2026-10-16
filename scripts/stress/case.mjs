@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { createDatabase, migrate, persistSale } from '../../packages/database/dist/index.js';
 import { createRedisConnection, assertRedisSafety, initializeAdmission, admissionKeys } from '../../packages/redis/dist/index.js';
 import { burst } from './generator.mjs';
-import { scenarios, validateFinal, admissionsWithinWindow } from './accounting.mjs';
+import { scenarios, validateFinal, admissionsWithinWindow, orderLatency } from './accounting.mjs';
 import { waitForRedisTime, crashWorker, pollStatus } from './experiments.mjs';
 import { waitForReadiness } from './readiness.mjs';
 
@@ -14,13 +14,22 @@ if (!scenario || !/^flash-test-[0-9a-f-]{36}$/.test(process.env.TEST_PROJECT ?? 
 const database = createDatabase(process.env.TEST_DATABASE_URL, 2, 5000);
 const redis = createRedisConnection(process.env.TEST_REDIS_URL, 'commands', 5000);
 const output = process.env.STRESS_OUTPUT;
-const artifact = { scenario, commit: process.env.STRESS_COMMIT, settings: { connections: Number(process.env.STRESS_CONNECTIONS || Math.min(scenario.requests, 10000)), timeoutMs: 30000, drainTimeoutMs: 300000, dispatchWindowMs: 1000, scheduleWindowMs: 900 }, startedAt: new Date().toISOString() };
+const artifact = { scenario, commit: process.env.STRESS_COMMIT, settings: { connections: Number(process.env.STRESS_CONNECTIONS || Math.min(scenario.requests, 10000)), timeoutMs: 30000, drainTimeoutMs: 300000, dispatchWindowMs: scenario.dispatchWindowMs ?? 1000, scheduleWindowMs: scenario.scheduleWindowMs ?? (scenario.dispatchWindowMs ?? 1000) * 0.9 }, startedAt: new Date().toISOString() };
+async function observeOrders(saleId) {
+  const rows = (await database.query(`SELECT user_identifier,
+    extract(epoch FROM clock_timestamp()) * 1000 AS observed_ms
+    FROM "order" WHERE flash_sale_id=$1`, [saleId])).rows;
+  for (const row of rows) observedOrders[row.user_identifier] ??= Number(row.observed_ms);
+}
 async function metrics(base) {
   const response = await fetch(`${base}/metrics`, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error('Metrics unavailable');
   return response.text();
 }
 let stopPolling;
+let stopObserving = false;
+let observer;
+const observedOrders = {};
 let recovery;
 let workerBase = process.env.STRESS_WORKER;
 try {
@@ -45,6 +54,12 @@ try {
     beforeDispatch: async () => { artifact.redisTimeAtDispatch = await waitForRedisTime(redis, target); },
     onDispatch: () => {
       artifact.dispatchStartedAt = new Date().toISOString();
+      if (scenario.orderSlo || scenario.measureOrders) observer = (async () => {
+        while (!stopObserving) {
+          await observeOrders(sale.id);
+          await delay(25);
+        }
+      })().catch(error => { artifact.observationError = String(error); });
       stopPolling = pollStatus(process.env.STRESS_API, sale.id, artifact.polls);
       if (scenario.failure) recovery = crashWorker(JSON.parse(process.env.STRESS_COMPOSE_ARGS), artifact.failureEvents)
         .then(base => { workerBase = base; }, error => { artifact.recoveryError = String(error); });
@@ -78,6 +93,14 @@ try {
   artifact.final = { ...final, invariants: { ...validateFinal(scenario.stock, final, acknowledged),
     admissionsWithinWindow: admissionsWithinWindow(entries, sale),
   } };
+  if (scenario.orderSlo || scenario.measureOrders) {
+    stopObserving = true;
+    await observer;
+    await observeOrders(sale.id);
+    artifact.orderVisibility = { observedOrders, ...orderLatency(entries, observedOrders) };
+    if (scenario.orderSlo) Object.assign(artifact.final.invariants, artifact.orderVisibility.invariants,
+      { orderObserverHealthy: !artifact.observationError });
+  }
   if (scenario.expectFill) artifact.final.invariants.filled = orders.length === Math.min(scenario.stock, scenario.identifiers);
   if (scenario.boundary) {
     const boundary = Date.parse(scenario.boundary === 'opening' ? sale.startsAt : sale.endsAt);
@@ -92,7 +115,9 @@ try {
         body: JSON.stringify({ identifier: entry.message.identifier, idempotencyKey: entry.message.request_key }),
       });
       artifact.replayAfterEnd = await response.json();
-      artifact.final.invariants.replayAfterEnd = artifact.replayAfterEnd.status === 'SUCCESS';
+      const status = await fetch(`${process.env.STRESS_API}/sales/${sale.id}/order?identifier=${encodeURIComponent(entry.message.identifier)}`, { signal: AbortSignal.timeout(10000) });
+      artifact.statusAfterEnd = await status.json();
+      artifact.final.invariants.replayAfterEnd = ['PROCESSING', 'SUCCESS'].includes(artifact.replayAfterEnd.status) && artifact.statusAfterEnd.order?.status === 'SUCCESS';
     } else artifact.final.invariants.replayAfterEnd = false;
     const fresh = await fetch(`${process.env.STRESS_API}/sales/${sale.id}/purchases`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(10000),
@@ -121,6 +146,8 @@ try {
   artifact.passed = false;
   process.exitCode = 1;
 } finally {
+  stopObserving = true;
+  if (observer) await observer;
   if (recovery) await recovery;
   if (stopPolling) await stopPolling();
   writeFileSync(`${output}/result.json`, JSON.stringify(artifact, null, 2));

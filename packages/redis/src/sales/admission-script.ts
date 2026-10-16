@@ -1,4 +1,4 @@
-import { recoveryFence } from './durability-scripts.js';
+import { recoveryFence } from './state-scripts.js';
 /** Pure window decision, shared with exact-timestamp Lua tests. */
 export const admissionWindowPredicate = `
 local function windowRejection(starts, ends, now)

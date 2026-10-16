@@ -38,13 +38,13 @@ export function purchaseHttpStatus(response: PurchaseResponse): number {
   }
 }
 
-export type InternalSubmissionState = 'unresolved' | 'reserved' | 'durable' | 'persisted' | 'rejected';
+export type InternalSubmissionState = 'unresolved' | 'reserved' | 'acknowledged' | 'persisted' | 'rejected' | 'lost';
 export function canTransitionSubmission(from: InternalSubmissionState, to: InternalSubmissionState): boolean {
   if (from === to) return true;
   switch (from) {
     case 'unresolved': return to === 'reserved' || to === 'rejected';
-    case 'reserved': return to === 'durable';
-    case 'durable': return to === 'persisted';
+    case 'reserved': return to === 'acknowledged' || to === 'persisted' || to === 'lost';
+    case 'acknowledged': return to === 'persisted' || to === 'lost';
     default: return false;
   }
 }
@@ -55,7 +55,7 @@ export function reconcileOrder(current: OrderState, incoming: OrderState | Purch
     return incoming.reason === 'already_placed' ? reconcileOrder(current, incoming.existingOrder) : current;
   }
   if (current.status === 'SUCCESS') return current;
-  if (current.status === 'PROCESSING' && (incoming.status === 'NOT_ORDERED' ||
+  if (current.status === 'PROCESSING' && ((incoming.status === 'NOT_ORDERED' && incoming.reason === 'confirmation_uncertain') ||
       (current.phase !== 'confirming' && incoming.status === 'PROCESSING' && incoming.phase === 'confirming'))) return current;
   return incoming;
 }

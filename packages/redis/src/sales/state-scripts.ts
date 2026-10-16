@@ -24,8 +24,6 @@ local fields = {}
 for i = 1, #entries[1][2], 2 do fields[entries[1][2][i]] = entries[1][2][i+1] end
 if fields.identifier ~= ARGV[1] or fields.request_key ~= request or fields.sale_id ~= ARGV[2] or
    fields.admitted_at_ms ~= tostring(record.admittedAtMs) then return redis.error_reply('ADMISSION_STREAM') end
--- A fresh write advances THIS client's offset past the reservation and stream.
-redis.call('HINCRBY', KEYS[1], 'confirmation_checkpoint', 1)
 return {request, tostring(record.admittedAtMs), record.streamId}
 `;
 
@@ -135,6 +133,5 @@ end
 if redis.call('XLEN', KEYS[5]) ~= count then return fail() end
 redis.call('HDEL', KEYS[1], 'recovery_diagnostic')
 redis.call('HSET', KEYS[1], 'recovered_run', run)
-redis.call('HINCRBY', KEYS[1], 'confirmation_checkpoint', 1)
 return 1
 `;

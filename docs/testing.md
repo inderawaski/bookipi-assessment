@@ -16,7 +16,7 @@ pnpm test:integration
 pnpm exec playwright install chromium
 pnpm test:browser
 pnpm test:failure
-pnpm test:stress stock100-1k stock100-10k duplicates stock100-100k stock10k-100k
+pnpm test:stress no-oversell duplicates sufficient-stock burst-10s burst-3s burst-1s spike-10k
 pnpm test:stress healthy sufficient-stock opening closing closing-worker-crash worker-crash repeated
 ```
 
@@ -65,21 +65,19 @@ Do not count one reservation and its completed order as two allocations. No reco
 
 Abruptly terminate processes and interrupt connections using deterministic test-only failpoints. Preserve volumes. Include persistence waits, AOF rewrite and readiness recovery. Every case records trace, invariant checks and final convergence. Persistent-volume destruction is explicitly outside the guarantee.
 
-## One-second stress scenarios
+## Stress scenarios
 
-| Initial stock | Requests | Identifiers | Purpose |
-| -- | -- | -- | -- |
-| 100 | 1,000 | Unique | Overselling |
-| 100 | 10,000 | Unique | High contention |
-| 100 | 10,000 | 100 repeated | Duplicate protection |
-| 100 | 100,000 | Unique | Saturation/degradation |
-| 10,000 | 100,000 | Unique | Larger allocation burst |
+The [stress harness guide](../scripts/stress/README.md) defines the revised seven
+required workloads: two synchronized correctness/duplicate cases, a 1,000-stock /
+1,000-buyer processing burst, three 5,000-buyer bursts over 10/3/1 seconds, and a
+10,000-buyer one-second spike with 100 stock. Every request must be dispatched
+inside its declared window; generator-invalid runs do not establish capacity.
 
-All requests must actually be dispatched within one second. Record actual send timestamps, not only iteration start times. Identify connection-pool delays, dropped iterations and generator CPU/network exhaustion. An invalid dispatch run is labeled invalid and rerun with sufficient generator capacity, potentially distributed generators with synchronized clocks. Do not silently stretch the test duration.
-
-Responses and queued processing can finish after the dispatch second. Report their duration separately. A target of 100k offered requests/s is not a measured achievement of 100k completed responses/s.
-
-Additional scenarios: bursts crossing opening and closing boundaries; browser/API clock differences; status polling; same-key accidental duplicate delivery versus different-key repeated placements; sufficient-stock admission-write workload; API/worker replica comparisons; worker/Redis/PostgreSQL failures during bursts; repeated bursts and recovery.
+The healthy spike must fill all 100 units and preserve all correctness invariants.
+Admission-to-committed-order visibility p99 must be under two seconds, and every
+admitted order must be visible within ten seconds. Visibility uses PostgreSQL's
+clock and includes sampling delay; pre-commit completed_at is not commit evidence.
+Recovery and boundary experiments retain separate acceptance criteria.
 
 ## Measurements and interpretation
 
@@ -87,7 +85,36 @@ Record commit SHA, dependency versions, machine/OS, Docker resources/storage, ne
 
 In healthy runs with enough eligible requests reaching admission, allocate min(stock,unique eligible identifiers). Saturation may produce fewer admissions with explicit pre-admission busy or uncertain outcomes. Every request outcome is accounted for, and acknowledged admissions cannot be lost. Timeouts are uncertain, not proof of rejection.
 
-## Measured summary
+## Final PostgreSQL stock-cap verification
+
+The user approved a final stock guard after a modeled Redis rollback crossed an
+in-flight PostgreSQL commit. [The guard report](final-stock-cap-results.md) records
+the implementation, regression, mutation check and a new healthy spike. Matching
+full-capacity replay remains valid; conflicting new work is quarantined and fences
+admission. Redis acknowledgement remains immediate and asynchronous replication
+remains one replica. Earlier measurements below are retained separately.
+
+## Current immediate-acknowledgement verification
+
+The [immediate acknowledgement report](async-admission-results.md) records the
+approved loss trade-off, one asynchronous Redis replica, test changes and a healthy
+10,000-buyer spike. It filled 100 units with approximately 365-ms order p99, while
+4,105 HTTP 504s remain an unresolved overload issue. The older scale-out and DEV-19
+measurements below used persistence barriers and do not describe current behavior.
+
+## Spike scale-out results
+
+The [four-way scale-out experiment](scale-out-results.md) records the rationale,
+valid matched runs and all invalid calibration attempts. Scaling APIs improved
+admission and scaling workers improved completion, but none met the new latency
+targets. The report separates these findings from Redis bottleneck hypotheses. A
+reverse-order follow-up (3/3 before 3/1) produced 100 and 90 orders respectively,
+showing the earlier allocation ranking was not stable.
+
+## Historical DEV-19 measured summary
+
+These results used the former workload definitions. They do not establish that
+the revised suite or new latency targets pass.
 
 Measured 16 October 2026 (Asia/Jakarta), M4 Pro / 24 GiB, macOS Darwin 25.5.0, Docker VM 12 CPUs / 7.748 GiB, Node 22.23.2, pnpm 11.25.0. Engine 29.7.2 / Compose 5.4.0; PostgreSQL 18.3 / Redis 7.4.8. One CPU / 512 MiB per API, worker and database; stress proxy one CPU / 512 MiB. Defaults: HTTP/admission concurrency 64/16, admission deadline 3000 ms, DB pool 10, dependency deadline 2000 ms. The generator runs on the host through localhost published proxy; volumes use overlayfs in the Docker VM. Exact configuration, dirty/base commit, runtime versions, host limits and resource samples are in each artifact. Physical fsync device latency was not measured.
 

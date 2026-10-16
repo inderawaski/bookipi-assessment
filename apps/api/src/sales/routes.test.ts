@@ -58,7 +58,7 @@ it('preserves every admission rejection, uncertain result and duplicate state', 
     }
     const duplicate = { status: 'REJECTED', reason: 'already_placed', existingOrder: { status: 'PROCESSING', phase: 'confirming' } } as const;
     place.mockResolvedValue(duplicate);
-    lookup.mockResolvedValue({ status: 'confirming', diagnostic: 'durability_unavailable' });
+    lookup.mockResolvedValue({ status: 'confirming', diagnostic: 'admission_unavailable' });
     hGet.mockResolvedValue('bound-key');
     expect((await submit()).json()).toEqual({ ...duplicate, existingOrder: { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' } });
     place.mockResolvedValue({ status: 'PROCESSING', phase: 'confirming' });
@@ -90,8 +90,20 @@ it('empty lookup is an observation and an unconfirmed submission can resolve on 
     expect(first.json()).toEqual({ status: 'NOT_ORDERED', reason: 'confirmation_uncertain' });
     expect((await app.inject('/sales/sale/order?identifier=person')).json()).toEqual({ status: 'AVAILABLE', order: { status: 'NOT_ORDERED' } });
     query.mockImplementation(async sql => ({ rows: sql.includes('flash_sale ORDER') ? [{ id: 'sale', starts_at: new Date(0), ends_at: new Date('2099-01-01'), initial_stock: 2 }] : [{ id: 'committed-later' }] }));
+    place.mockResolvedValue({ status: 'PROCESSING', phase: 'queued' });
     const replay = await app.inject({ method: 'POST', url: '/sales/sale/purchases', payload });
-    expect(replay.json()).toEqual({ status: 'SUCCESS', orderId: 'committed-later' });
+    expect(replay.json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
+    expect((await app.inject('/sales/sale/order?identifier=person')).json()).toEqual({ status: 'AVAILABLE', order: { status: 'SUCCESS', orderId: 'committed-later' } });
     expect(place.mock.calls).toEqual([['sale', { saleId: 'sale', ...payload }], ['sale', { saleId: 'sale', ...payload }]]);
+  } finally { await app.close(); }
+});
+
+it('returns the Redis acknowledgement without querying PostgreSQL order status', async () => {
+  const { app, place, query } = fixture();
+  try {
+    place.mockResolvedValue({ status: 'PROCESSING', phase: 'queued' });
+    const response = await app.inject({ method: 'POST', url: '/sales/sale/purchases', payload: { identifier: 'person', idempotencyKey: 'key' } });
+    expect(response.json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
+    expect(query.mock.calls.some(([sql]) => sql.includes('FROM "order"'))).toBe(false);
   } finally { await app.close(); }
 });

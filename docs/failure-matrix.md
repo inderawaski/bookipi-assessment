@@ -1,5 +1,12 @@
 # Deterministic recovery evidence
 
+> This matrix describes the earlier barrier-based contract. The 16 October 2026
+> immediate-acknowledgement decision supersedes its durability guarantees. Current
+> tests use RedisAdmission/current-state validation; crash tests allow admission
+> loss, and new integration/browser tests cover replica outage and lost reservations.
+> See [current architecture](architecture.md#acknowledgement-and-accepted-loss-risk-16-october-2026).
+
+
 Run `pnpm test:failure` with Docker available. The runner creates an isolated
 `flash-test-UUID` project, builds all services, and retains PostgreSQL and Redis
 volumes when removing containers. It never deletes storage in a recovery case.
