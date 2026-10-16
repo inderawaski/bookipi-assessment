@@ -131,9 +131,9 @@ On 16 October 2026, `pnpm lint`, `pnpm typecheck`, `pnpm build`, both demonstrat
 
 **Pending; automated checks do not record human approval.** On a fresh checkout, a person should:
 
-1. Follow README prerequisites, environment, install/build, infrastructure, migration and pre-opening configuration exactly. Record source revision with `git rev-parse HEAD`, versions, sale ID, UTC times and initial stock. Record the source repository URL once available.
+1. Clone [the source repository](https://github.com/inderawaski/bookipi-assessment) and follow README prerequisites, environment, install/build, infrastructure, migration and pre-opening configuration exactly. Record source revision with `git rev-parse HEAD`, versions, sale ID, UTC times and initial stock.
 2. Open the documented URL, wait for ACTIVE, place an arbitrary identifier, observe PROCESSING then SUCCESS, retry deliberately and confirm duplicate feedback; refresh and confirm the same order.
 3. Save sale status/remaining stock, order ID and `recovery.mjs inspect` output. Stop the worker, place another identifier, retain its processing reservation, then stop/start services without deleting volumes. Confirm both identifiers produce exactly one order each, and inventory reflects the same allocations.
 4. Rerun `sale:configure` with the **original** ID, times and stock (not newly generated times); confirm stock and existing reservations are unchanged. Use a fresh sale ID for later demonstrations. Never reset an existing sale.
 5. Follow inspection/replay instructions for exhausted disposable work and distinguish readiness recovery from queue drain. Run the documented suites; inspect dispatch validity and accounting artifacts. Record any unstated step as a documentation defect.
-6. Record date, reviewer, checkout revision, commands, screenshots/status evidence and pass/fail. Keep checkpoint pending until a person supplies that evidence. Outstanding source URL and two invalid 100k bursts remain submission limitations.
+6. Record date, reviewer, checkout revision, commands, screenshots/status evidence and pass/fail. Keep checkpoint pending until a person supplies that evidence. The two invalid 100k bursts remain submission limitations.

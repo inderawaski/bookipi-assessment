@@ -22,7 +22,12 @@ Validated environment: macOS arm64 (Darwin 25.5.0), Apple M4 Pro / 24 GiB, Docke
 
 ## Build and run
 
-Obtain this source checkout, then run from its root. No source remote is configured in the supplied checkout; the submission repository URL is still unavailable and must be supplied before submission. Do not interpret this as a published repository.
+Source repository: [inderawaski/bookipi-assessment](https://github.com/inderawaski/bookipi-assessment). Clone it and run the remaining commands from its root:
+
+```sh
+git clone https://github.com/inderawaski/bookipi-assessment.git
+cd bookipi-assessment
+```
 
 ```sh
 cp .env.example .env
@@ -77,4 +82,4 @@ No payment, fraud, shipping eligibility or other external business rejection exi
 
 Operator examples: `node --env-file=.env scripts/recovery.mjs inspect flash-sale` and `node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0` (replace the example stream ID with the inspected exhausted entry). Read the runbook first. [Operational limits](docs/operations.md) describe bounded pools, proxy deadlines and retained-stream storage growth.
 
-The final submission commit is obtained with `git rev-parse HEAD` after committing; no final submission revision or repository URL has yet been recorded. Human checkpoint G remains pending: a person must follow the [fresh-checkout rehearsal](docs/testing.md#human-checkpoint-g) and record evidence before acceptance.
+Record the final submission commit with `git rev-parse HEAD`. Human checkpoint G remains pending: a person must follow the [fresh-checkout rehearsal](docs/testing.md#human-checkpoint-g) and record evidence before acceptance.
