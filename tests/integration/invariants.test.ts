@@ -20,9 +20,9 @@ it('accounts independently for acknowledged admissions across two APIs and worke
     const sale = { id: randomUUID(), startsAt: new Date(now + 3000).toISOString(), endsAt: new Date(now + 12000).toISOString(), initialStock: 8 };
     await persistSale(database, sale); await initializeAdmission(redis, sale);
     await gates[0]!.recover(sale, []);
-    apps.forEach((app, i) => registerSaleRoutes(app, { database, redis, admission: gates[i]!, probe: async () => { await database.query('SELECT 1'); } }));
+    apps.forEach((app, i) => registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission: gates[i]!, probe: async () => { await database.query('SELECT 1'); } }));
     const post = async (i: number, identifier: string, key: string, id = sale.id) => (await apps[i % 2]!.inject({ method: 'POST', url: `/sales/${id}/purchases`, payload: { identifier, idempotencyKey: key } })).json();
-    expect(await post(0, 'person', 'unknown', randomUUID())).toEqual({ status: 'REJECTED', reason: 'not_found' });
+    expect(await post(0, 'person', 'unknown', randomUUID())).toEqual({ status: 'NOT_ORDERED', reason: 'confirmation_uncertain' });
     // Poll Redis TIME, rather than sleeping until the API host believes the sale is open.
     await expect.poll(async () => {
       const t = await redis.sendCommand(['TIME']) as string[];

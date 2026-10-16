@@ -2,7 +2,7 @@ import { Metrics, registerOperations, singleFlightProbe } from '@flash/operation
 import { createOrderConsumer } from './orders/consumer.js';
 import { createHealthServer } from './health.js';
 import { createDatabase, listSales } from '@flash/database';
-import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, RedisAdmission, saleKey } from '@flash/redis';
+import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, RedisAdmission, cachedSaleConfigurations, saleKey } from '@flash/redis';
 import { parseConfiguration } from '@flash/configuration';
 export async function startService(service: 'api' | 'worker') {
   const config = parseConfiguration(process.env, service);
@@ -19,7 +19,7 @@ export async function startService(service: 'api' | 'worker') {
     if (schema.rows[0]?.name) {
       const run = (await redis.info('server')).match(/run_id:([^\r\n]+)/)?.[1];
       if (!run) throw new Error('Missing Redis run ID');
-      for (const sale of await listSales(database)) {
+      for (const sale of await cachedSaleConfigurations(redis, new URL(config.databaseUrl).pathname, () => listSales(database))) {
         if (recoveredRuns.get(sale.id) === run) {
           try { await assertAdmissionConfiguration(redis, sale); }
           catch {

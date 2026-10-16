@@ -17,7 +17,7 @@ it('shares last stock and duplicate mappings across independently bounded API in
     const keys = admissionKeys(sale.id);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
     await admissions[0]!.recover(sale, []);
-    apps.forEach((app, i) => registerSaleRoutes(app, { database, redis, admission: admissions[i]!, probe: async () => {} }));
+    apps.forEach((app, i) => registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission: admissions[i]!, probe: async () => {} }));
     const submit = (i: number, identifier: string, idempotencyKey: string) => apps[i]!.inject({ method: 'POST', url: `/sales/${sale.id}/purchases`, payload: { identifier, idempotencyKey } });
     const results = await Promise.all([submit(0, 'first', 'first'), submit(1, 'second', 'second')]);
     expect(results.map(r => r.json().status).sort()).toEqual(['PROCESSING', 'REJECTED']);
@@ -50,18 +50,22 @@ it('rejects an exhausted admission pool before send and recovers without losing 
   } finally { redis.destroy(); await database.end(); }
 }, 15000);
 
-it('times out an exhausted database pool before admission without allocating', async () => {
+it('admits without waiting for an exhausted database pool', async () => {
   const { database, redis } = testServices();
   await redis.connect();
   const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const app = createHealthServer(async () => {});
-  registerSaleRoutes(app, { database, redis, admission: gate, probe: async () => {} });
+  registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission: gate, probe: async () => {} });
+  const sale = { id: randomUUID(), startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 60000).toISOString(), initialStock: 1 };
+  const keys = admissionKeys(sale.id);
+  await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
+  await gate.recover(sale, []);
   const clients = await Promise.all([database.connect(), database.connect()]);
   try {
-    const id = randomUUID();
+    const id = sale.id;
     const result = await app.inject({ method: 'POST', url: `/sales/${id}/purchases`, payload: { identifier: 'person', idempotencyKey: 'key' } });
-    expect(result.json()).toEqual({ status: 'REJECTED', reason: 'unavailable' });
+    expect(result.json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
     expect(database.waitingCount).toBe(0);
-    expect(await redis.xLen(admissionKeys(id)[4])).toBe(0);
+    expect(await redis.xLen(keys[4])).toBe(1);
   } finally { clients.forEach(client => client.release()); await app.close(); redis.destroy(); await database.end(); }
 }, 10000);

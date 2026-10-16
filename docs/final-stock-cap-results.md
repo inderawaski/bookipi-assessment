@@ -1,5 +1,7 @@
 # Final PostgreSQL stock cap
 
+> These spike measurements precede the Redis-only purchase-route change. See [the follow-up](redis-only-admission-results.md) for that implementation and its separate evidence.
+
 The user approved the guard on 16 October 2026 after an isolated regression
 reproduced two committed orders for one unit when an old transaction crossed
 Redis reservation loss and recovery. [The decision and original failure](admission-loss-crash-race.md)

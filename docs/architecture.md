@@ -172,7 +172,7 @@ Operator commands and bounded replay are in [recovery operations](recovery.md). 
 
 ## Scaling and limits
 
-The API and workers can scale horizontally around shared admission/storage. Redis admission rejections avoid a PostgreSQL inventory-reservation transaction; routes still query PostgreSQL for sale configuration, readiness and order lookup. Slow processing does not keep admission transactions open. Pool/queue bounds and retryable pre-admission busy responses control overload; a post-send uncertainty is not a pre-admission rejection.
+The API and workers can scale horizontally around shared admission/storage. The purchase route calls only Redis: sale configuration is preloaded by sale:configure and Lua validates the configuration, recovery/fault fences, time window, stock and idempotency. No request-side PostgreSQL read, readiness probe or recovery runs before admission. GET sale/order routes and startup/health readiness read immutable sale metadata through a shared Redis cache, loading PostgreSQL only when metadata is missing or invalidated. Order status queries, database health checks and reconciliation order snapshots still use PostgreSQL. Missing/corrupt/unreconciled Redis state fails closed as an uncertain purchase response; it is never lazily rebuilt by a purchase. Slow processing does not keep admission transactions open. Pool/queue bounds and retryable pre-admission busy responses control overload; a post-send uncertainty is not a pre-admission rejection.
 
 Redis remains a shared single-sale throughput and availability limit. AOF, CPU, network, proxy, database processing and generator capacity all require measurement. Partitioned inventory allocations and controlled edge admission are future options at larger/global scale; partitioning requires reconsidering strict global admission order and identity enforcement.
 
@@ -206,3 +206,24 @@ The [worker](../apps/worker/src/orders/consumer.ts) uses separate blocking/comma
 The [two-table schema](../packages/database/src/sales/schema.ts) has immutable `flash_sale` configuration and `"order"` with a sale foreign key, admission/completion timestamps and UNIQUE(flash_sale_id, user_identifier). Admission reserves inventory and returns its acknowledgement without waiting for persistence; the PostgreSQL transaction finalizes an order without consuming another unit.
 
 Exact runtime versions, retry/poll defaults, operational bounds and measured limitations are in [decisions](decisions.md). Public route shapes and input limits are in [public contract](public-contract.md).
+
+## Immutable sale metadata cache
+
+GET handlers first reuse the immutable fields already preloaded in the admission
+hash. When those fields are absent, the
+[configuration cache](../packages/redis/src/sales/configuration-cache.ts) holds a
+complete metadata snapshot in Redis, scoped by database name. Successful admission
+configuration increments a global revision atomically with configuration. Cache
+reads compare the current primary run ID and revision; a miss loads PostgreSQL
+and publishes only if that token is unchanged. A racing setup therefore cannot
+be hidden by a late older snapshot. A Redis restart invalidates persisted snapshots.
+A GET for an absent sale ID refreshes from PostgreSQL to discover a persisted
+configuration whose admission setup is not complete. Corrupt cache payloads or
+Redis failures fail closed rather than bypassing Redis.
+
+Metadata has no TTL because sale configuration is immutable. It is separate from
+stock/reservations: filling it never creates admission state, replenishes stock or
+clears recovery fences. Readiness still validates live admission configuration and
+current epoch/fault state. A committed order is queried first and remains readable
+without Redis. These global cache/revision keys target the deployed single Redis
+primary; configuration/cache scripts are not Redis Cluster implementations.

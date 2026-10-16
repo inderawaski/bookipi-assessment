@@ -138,3 +138,46 @@ A valid sufficient-stock 1,000-request case admitted 16 units and rejected 984 a
 In the controlled replica comparison, 1 API / 1 worker admitted 16 and drained in 30.96 seconds, 3 / 1 admitted 48 and drained in 96.30 seconds, and 3 / 3 admitted 47 and drained in 40.96 seconds. Extra APIs increased backlog; workers improved drain by 2.35× for nearly equal allocations. This is not linear-scaling evidence. Stress measurements used an explicitly larger proxy budget (one CPU / 512 MiB) after the demonstration proxy was OOM killed. Invalid runs and transport/proxy failures remain in the report.
 
 A credible next experiment uses dedicated generator/server hosts, sizes gate budgets from latency evidence, and evaluates batching with renewed crash/fairness tests. Partitioning by sale can distribute independent sales; splitting one sale's stock would require an explicit global ordering and duplicate-identity policy. Replication/failover needs a stronger durability protocol than this local barrier. Authentication and product schema migrations remain future scope, with no tables or behavior added here.
+
+## Redis-only purchase path (user approved, 16 October 2026)
+
+Remove the per-purchase PostgreSQL sale scan and dependency/reconciliation probe.
+Immutable sale configuration already resides in the Redis admission hash, populated
+by sale:configure before opening. The existing atomic Lua script validates its
+version, fields, Redis-time window, stock, duplicate associations, fault latch and
+current primary recovery epoch. Reuse that authority rather than introducing a
+second cache or request-time database fallback.
+
+Startup/health reconciliation still compares PostgreSQL and Redis and repairs or
+fences state through the existing recovery protocol. GET sale/order lookups retain
+PostgreSQL access. A prepared sale may accept provisional reservations during a
+PostgreSQL outage; durable processing waits for database recovery. This follows
+the approved asynchronous admission contract. Readiness remains dependent on both
+services, so an external load balancer using that signal can still withdraw APIs.
+
+Without a PostgreSQL lookup, missing Redis configuration cannot distinguish an
+unknown ID from lost sale state. POST therefore returns the existing uncertain
+NOT_ORDERED/confirmation_uncertain response, never reconstructing inventory or
+claiming a definitive unknown-sale rejection. GET retains 404 for unknown sales.
+Configuration remains immutable and has no TTL; configuration/recovery must
+complete before the sale opens. Redis restart/fault fences are enforced inside
+Lua on every purchase, without invoking a PostgreSQL-backed probe.
+
+## Redis-cached sale metadata (user approved, 17 October 2026)
+
+GET sale/order handlers first read the fields already preloaded for Lua. If
+missing, they use a Redis metadata snapshot; API/worker readiness uses that snapshot
+for sale discovery. PostgreSQL supplies the snapshot only on a missing/invalidated cache
+or an absent requested sale ID. Cache publication is conditional on the current
+primary epoch and configuration revision. Configuration invalidates snapshots
+atomically, including idempotent retries, so newly configured sales are discovered
+without a per-request sale-table scan. No TTL or in-process success cache is used.
+
+The metadata cache is separate from admission inventory. Filling it cannot
+reconstruct missing stock after opening or clear a recovery/fault fence. The
+existing configure/recovery procedures still govern admission. Order confirmation,
+database health checks and recovery order snapshots retain their PostgreSQL access.
+Committed orders are read first, preserving SUCCESS when Redis is unavailable.
+The deployed Redis primary is supported; global metadata keys do not add Cluster
+support. Cold fills can race and duplicate DB reads, but stale publication is
+prevented; no distributed lock or background cache-refresh mechanism is added.

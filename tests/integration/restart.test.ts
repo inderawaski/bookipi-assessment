@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { setTimeout } from 'node:timers/promises';
 import { it, expect } from 'vitest';
+import { cachedSaleConfigurations } from '../../packages/redis/src/index.js';
+import { vi } from 'vitest';
 import { testServices } from '../services.js';
 it('retains PostgreSQL and AOF markers across a restart without deleting volumes', async () => {
   const { database, redis } = testServices();
@@ -9,6 +11,9 @@ it('retains PostgreSQL and AOF markers across a restart without deleting volumes
     // This table exists only inside the disposable test database, never the application schema.
     await database.query('CREATE TABLE bootstrap_marker (value text PRIMARY KEY)');
     await database.query("INSERT INTO bootstrap_marker VALUES ('persistent')");
+    const load = vi.fn(async () => []);
+    await cachedSaleConfigurations(redis, 'restart-test', load);
+    expect(load).toHaveBeenCalledTimes(1);
     await redis.set('bootstrap:restart', 'persistent');
     expect(await redis.sendCommand(['WAITAOF', '1', '0', '5000'])).toEqual([1, 0]);
     redis.destroy();
@@ -24,6 +29,8 @@ it('retains PostgreSQL and AOF markers across a restart without deleting volumes
     }
     expect(ready).toBe(true);
     expect(await redis.get('bootstrap:restart')).toBe('persistent');
+    await cachedSaleConfigurations(redis, 'restart-test', load);
+    expect(load).toHaveBeenCalledTimes(2); // persisted metadata is reloaded on a new primary epoch
     expect((await database.query('SELECT value FROM bootstrap_marker')).rows).toEqual([{ value: 'persistent' }]);
   } finally { if (redis.isOpen) redis.destroy(); await database.end(); }
 }, 60000);

@@ -13,7 +13,7 @@ it('exposes real admission, normalization, retries, delayed state and committed 
   const admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const probe = async () => { await database.query('SELECT 1'); await assertAdmissionConfiguration(redis, sale); };
   const app = createHealthServer(probe);
-  registerSaleRoutes(app, { database, redis, admission, probe });
+  registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission, probe });
   try {
     await migrate(database); await persistSale(database, sale);
     const keys = admissionKeys(sale.id);
@@ -52,7 +52,7 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
   await redis.connect();
   const admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const app = createHealthServer(async () => {});
-  registerSaleRoutes(app, { database, redis, admission, probe: async () => { await database.query('SELECT 1'); } });
+  registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission, probe: async () => { await database.query('SELECT 1'); } });
   try {
     await migrate(database);
     const id = randomUUID();
@@ -90,7 +90,7 @@ it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or dup
     if (loseConfirmation && (boundary === 'after_send' || boundary === 'before_lookup')) throw new Error('Injected confirmation loss');
   });
   const app = createHealthServer(async () => {});
-  registerSaleRoutes(app, { database, redis, admission, probe: async () => { await database.query('SELECT 1'); } });
+  registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission, probe: async () => { await database.query('SELECT 1'); } });
   try {
     await migrate(database); await persistSale(database, sale);
     const keys = admissionKeys(sale.id);
@@ -107,4 +107,43 @@ it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or dup
     expect(await redis.hLen(keys[3])).toBe(1);
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
   } finally { await app.close(); redis.destroy(); await database.end(); }
+}, 20000);
+
+it('admits from preloaded Redis configuration during a PostgreSQL outage and retains Lua fences', async () => {
+  const { database, redis } = testServices();
+  const admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
+  const probe = async () => { await database.query('SELECT 1'); };
+  const app = createHealthServer(probe);
+  registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission, probe });
+  const sale = { id: randomUUID(), startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 60000).toISOString(), initialStock: 1 };
+  const keys = admissionKeys(sale.id);
+  const post = (identifier = 'person', key = 'key', saleId = sale.id) => app.inject({ method: 'POST', url: `/sales/${saleId}/purchases`, payload: { identifier, idempotencyKey: key } });
+  try {
+    await migrate(database); await persistSale(database, sale); await redis.connect();
+    await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
+    await admission.recover(sale, []);
+    // The same pool used by both the route and its readiness probe is unavailable.
+    await database.end();
+    expect((await app.inject('/health/ready')).statusCode).toBe(503);
+    expect((await post()).json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
+    expect((await post()).json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
+    expect((await post('other', 'other-key')).json()).toEqual({ status: 'REJECTED', reason: 'sold_out' });
+    expect((await post('other')).json()).toEqual({ status: 'REJECTED', reason: 'idempotency_conflict' });
+    expect((await post('person', 'new-key')).json()).toEqual({ status: 'REJECTED', reason: 'already_placed', existingOrder: { status: 'PROCESSING', phase: 'queued' } });
+    expect((await app.inject(`/sales/${sale.id}/order?identifier=person`)).statusCode).toBe(503);
+    const uncertain = { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' };
+    // Never rebuild missing or invalid configuration from a request.
+    expect((await post('unknown', 'missing-key', randomUUID())).json()).toEqual(uncertain);
+    await redis.hSet(keys[0], 'configuration_version', 'broken');
+    expect((await post('corrupt', 'corrupt-key')).json()).toEqual(uncertain);
+    await redis.hSet(keys[0], 'configuration_version', '1');
+    await redis.hSet(keys[0], 'admission_fault', 'operator repair required');
+    expect((await post('fault', 'fault-key')).json()).toEqual(uncertain);
+    await redis.hDel(keys[0], 'admission_fault');
+    // A restarted primary has a different run ID; a stale epoch must fence even replay.
+    await redis.hSet(keys[0], 'recovered_run', 'previous-primary-run');
+    expect((await post()).json()).toEqual(uncertain);
+    expect(await redis.xLen(keys[4])).toBe(1);
+    expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
+  } finally { await app.close(); if (redis.isOpen) redis.destroy(); if (!database.ended) await database.end(); }
 }, 20000);

@@ -1,3 +1,4 @@
+import { configurationRevisionKey } from './configuration-cache.js';
 export interface AdmissionConfiguration { id: string; startsAt: string; endsAt: string; initialStock: number }
 interface RedisCommands { sendCommand(args: string[]): Promise<unknown> }
 export function saleKey(id: string) { return `sale:{${Buffer.from(id).toString('hex')}}:admission`; }
@@ -20,10 +21,12 @@ else
 end
 -- Record the schema version on both fresh initialization and idempotent retry.
 redis.call('HSET', KEYS[1], 'configuration_version', '1')
+-- Invalidate metadata snapshots after configuration, including an idempotent retry.
+redis.call('INCR', KEYS[2])
 return 1
 `;
 export async function initializeAdmission(redis: RedisCommands, sale: AdmissionConfiguration) {
-  await redis.sendCommand(['EVAL', configure, '1', saleKey(sale.id), ...values(sale)]);
+  await redis.sendCommand(['EVAL', configure, '2', saleKey(sale.id), configurationRevisionKey, ...values(sale)]);
 
 }
 export async function assertAdmissionConfiguration(redis: RedisCommands, sale: AdmissionConfiguration) {
@@ -32,4 +35,16 @@ export async function assertAdmissionConfiguration(redis: RedisCommands, sale: A
   if (!Array.isArray(actual) || expected.some((value, index) => actual[index] !== value) || typeof actual[3] !== 'string' || !/^\d+$/.test(actual[3]) || Number(actual[3]) > sale.initialStock) {
     throw new Error('Admission configuration missing or inconsistent; run sale:configure or repair');
   }
+}
+
+/** Read immutable fields already preloaded for Lua; absence permits a metadata fallback. */
+export async function readAdmissionConfiguration(redis: RedisCommands, id: string): Promise<AdmissionConfiguration | undefined> {
+  const fields = await redis.sendCommand(['HMGET', saleKey(id), 'starts_at', 'ends_at', 'initial_stock', 'configuration_version']);
+  if (!Array.isArray(fields) || fields.length !== 4) throw new Error('Invalid sale configuration reply');
+  if (fields.every(value => value === null)) return undefined;
+  const [starts, ends, stock, version] = fields;
+  const integer = (value: unknown) => typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value) && Number.isSafeInteger(Number(value));
+  if (!integer(starts) || !integer(ends) || !integer(stock) || version !== '1' ||
+    Number(starts) >= Number(ends) || Number(stock) > 2147483647 || Number(ends) > 8640000000000000) throw new Error('Invalid cached sale configuration');
+  return { id, startsAt: new Date(Number(starts)).toISOString(), endsAt: new Date(Number(ends)).toISOString(), initialStock: Number(stock) };
 }

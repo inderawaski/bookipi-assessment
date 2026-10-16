@@ -15,7 +15,9 @@ export async function assertRedisSafety(client: { configGet: (keys: string[]) =>
   }
 
 }
-export { initializeAdmission, assertAdmissionConfiguration, saleKey } from './sales/configuration.js';
+export { initializeAdmission, assertAdmissionConfiguration, readAdmissionConfiguration, saleKey } from './sales/configuration.js';
 export { admitPurchase, admissionKeys, AdmissionUncertainError, type AdmissionResult, type Reservation } from './sales/admission.js';
 export { RedisAdmission, type ValidatedReservation, type PersistedAdmission, type Confirmation } from './sales/acknowledgement.js';
 export { finishAttempt, claimAttempt, delayAttempt, replayOrder, retryDelay, defaultRetryPolicy, type RetryPolicy } from './sales/retries.js';
+
+export { cachedSaleConfigurations } from './sales/configuration-cache.js';

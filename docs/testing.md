@@ -168,3 +168,7 @@ On 16 October 2026, `pnpm lint`, `pnpm typecheck`, `pnpm build`, both demonstrat
 4. Rerun `sale:configure` with the **original** ID, times and stock (not newly generated times); confirm stock and existing reservations are unchanged. Use a fresh sale ID for later demonstrations. Never reset an existing sale.
 5. Follow inspection/replay instructions for exhausted disposable work and distinguish readiness recovery from queue drain. Run the documented suites; inspect dispatch validity and accounting artifacts. Record any unstated step as a documentation defect.
 6. Record date, reviewer, checkout revision, commands, screenshots/status evidence and pass/fail. Keep checkpoint pending until a person supplies that evidence. The two invalid 100k bursts remain submission limitations.
+
+Redis-only purchase admission follow-up: [verification and spike evidence](redis-only-admission-results.md). The route regression asserts no database/probe calls; integration covers a closed/exhausted PostgreSQL pool and retained Lua fences.
+
+Sale metadata cache: [read flow, safety and verification](sale-configuration-cache.md).

@@ -11,10 +11,16 @@ function fixture() {
   const place = vi.fn(async (): Promise<PurchaseResponse> => ({ status: 'PROCESSING', phase: 'queued' }));
   const lookup = vi.fn(async (): Promise<Confirmation> => ({ status: 'confirming', diagnostic: 'missing_without_absence_proof' }));
   const hGet = vi.fn(async () => '2');
+  let cached = '';
+  const sendCommand = vi.fn(async (args: string[]) => {
+    if (args[0] === 'HMGET') return [null, null, null, null];
+    if (args[2] === '2' && args.length === 5) return ['0', cached];
+    cached = args[6]!; return 1;
+  });
   const app = createHealthServer(probe);
   const metrics = new Metrics();
-  registerSaleRoutes(app, { database: { query }, redis: { hGet, hExists: async () => 0 }, admission: { place, lookup }, probe, metrics, webOrigin: 'http://localhost:8080' } as unknown as Parameters<typeof registerSaleRoutes>[1]);
-  return { app, query, probe, place, lookup, hGet, metrics };
+  registerSaleRoutes(app, { configurationScope: '/flash_test', database: { query }, redis: { sendCommand, hGet, hExists: async () => 0 }, admission: { place, lookup }, probe, metrics, webOrigin: 'http://localhost:8080' } as unknown as Parameters<typeof registerSaleRoutes>[1]);
+  return { app, query, probe, place, lookup, hGet, metrics, sendCommand };
 }
 it('serves status, encoded generic identities, strict validation, CORS and size bounds', async () => {
   const { app, place } = fixture();
@@ -98,12 +104,41 @@ it('empty lookup is an observation and an unconfirmed submission can resolve on 
   } finally { await app.close(); }
 });
 
-it('returns the Redis acknowledgement without querying PostgreSQL order status', async () => {
-  const { app, place, query } = fixture();
+it('admits using only Redis even when PostgreSQL and the readiness probe are unavailable', async () => {
+  const { app, place, query, probe } = fixture();
   try {
+    query.mockRejectedValue(new Error('PostgreSQL unavailable'));
+    probe.mockRejectedValue(new Error('Readiness unavailable'));
     place.mockResolvedValue({ status: 'PROCESSING', phase: 'queued' });
     const response = await app.inject({ method: 'POST', url: '/sales/sale/purchases', payload: { identifier: 'person', idempotencyKey: 'key' } });
     expect(response.json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
-    expect(query.mock.calls.some(([sql]) => sql.includes('FROM "order"'))).toBe(false);
+    expect(place).toHaveBeenCalledOnce();
+    expect(query).not.toHaveBeenCalled();
+    expect(probe).not.toHaveBeenCalled();
+  } finally { await app.close(); }
+});
+
+it('serves cached sale configuration without another database read', async () => {
+  const { app, query } = fixture();
+  try {
+    expect((await app.inject('/sales/sale')).statusCode).toBe(200);
+    expect(query).toHaveBeenCalledTimes(1);
+    query.mockClear();
+    query.mockRejectedValue(new Error('Unexpected configuration database read'));
+    expect((await app.inject('/sales/sale')).json()).toMatchObject({ saleId: 'sale', remainingStock: 2 });
+    expect(query).not.toHaveBeenCalled();
+  } finally { await app.close(); }
+});
+
+it('uses sale fields already preloaded for Lua without filling a second cache from PostgreSQL', async () => {
+  const { app, query, sendCommand } = fixture();
+  try {
+    sendCommand.mockImplementation(async args => {
+      if (args[0] === 'HMGET') return ['0', String(Date.parse('2099-01-01')), '2', '1'];
+      throw new Error('Unexpected cache fallback');
+    });
+    query.mockRejectedValue(new Error('Unexpected database read'));
+    expect((await app.inject('/sales/sale')).json()).toMatchObject({ saleId: 'sale', remainingStock: 2 });
+    expect(query).not.toHaveBeenCalled();
   } finally { await app.close(); }
 });

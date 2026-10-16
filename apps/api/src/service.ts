@@ -2,7 +2,7 @@ import { Metrics, registerOperations, singleFlightProbe } from '@flash/operation
 import { registerSaleRoutes } from './sales/routes.js';
 import { createHealthServer } from './health.js';
 import { createDatabase, listSales } from '@flash/database';
-import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, RedisAdmission, saleKey } from '@flash/redis';
+import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, RedisAdmission, cachedSaleConfigurations, saleKey } from '@flash/redis';
 import { parseConfiguration } from '@flash/configuration';
 export async function startService(service: 'api' | 'worker') {
   const config = parseConfiguration(process.env, service);
@@ -19,7 +19,7 @@ export async function startService(service: 'api' | 'worker') {
     if (schema.rows[0]?.name) {
       const run = (await redis.info('server')).match(/run_id:([^\r\n]+)/)?.[1];
       if (!run) throw new Error('Missing Redis run ID');
-      for (const sale of await listSales(database)) {
+      for (const sale of await cachedSaleConfigurations(redis, new URL(config.databaseUrl).pathname, () => listSales(database))) {
         if (recoveredRuns.get(sale.id) === run) {
           try { await assertAdmissionConfiguration(redis, sale); }
           catch {
@@ -60,7 +60,7 @@ export async function startService(service: 'api' | 'worker') {
     metrics.set('database_pool_connections', database.totalCount);
   });
   app.log.info({ service, httpConcurrency: config.httpConcurrency, admissionConcurrency: config.admissionConcurrency, admissionTimeoutMs: config.admissionTimeoutMs, databasePoolSize: config.databasePoolSize }, 'Operational limits');
-  if (service === 'api') registerSaleRoutes(app, { database, redis, admission, probe, webOrigin: config.webOrigin, metrics });
+  if (service === 'api') registerSaleRoutes(app, { database, redis, admission, probe, configurationScope: new URL(config.databaseUrl).pathname, webOrigin: config.webOrigin, metrics });
   app.addHook('onClose', async () => { if (redis.isOpen) redis.destroy(); await database.end(); });
   try { await probe(); await app.listen({ host: config.host, port: config.port }); }
   catch { await app.close(); throw new Error(`${service} startup failed: check PostgreSQL availability, Redis persistence, and sale configuration`); }

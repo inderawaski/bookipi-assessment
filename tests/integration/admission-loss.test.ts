@@ -13,7 +13,7 @@ it('reports a lost acknowledged reservation as NOT_ORDERED and permits same-key 
   const sale = { id: randomUUID(), startsAt: new Date(Date.now()-60000).toISOString(), endsAt: new Date(Date.now()+60000).toISOString(), initialStock: 1 };
   const keys = admissionKeys(sale.id), admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const app = createHealthServer(async () => {});
-  registerSaleRoutes(app, { database, redis, admission, probe: async () => {} });
+  registerSaleRoutes(app, { configurationScope: '/flash_test', database, redis, admission, probe: async () => {} });
   try {
     await migrate(database); await persistSale(database, sale);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });

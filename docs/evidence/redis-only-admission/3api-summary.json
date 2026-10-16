@@ -1,0 +1,212 @@
+{
+  "project": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d",
+  "startedAt": "2026-10-16T16:56:04.960Z",
+  "apiReplicas": 3,
+  "workerReplicas": 1,
+  "passed": false,
+  "runStatus": "measurement_failed",
+  "error": "Error: Metrics unavailable\n    at metrics (file:///Users/waski/Vashikovich/bookipi-assessment/scripts/stress/case.mjs:26:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async file:///Users/waski/Vashikovich/bookipi-assessment/scripts/stress/case.mjs:137:34",
+  "settings": {
+    "connections": 10000,
+    "timeoutMs": 30000,
+    "drainTimeoutMs": 300000,
+    "dispatchWindowMs": 1000,
+    "scheduleWindowMs": 900
+  },
+  "validDispatch": true,
+  "dispatchLastMs": 902.3688330000004,
+  "admissions": 100,
+  "orders": 100,
+  "orderLatencyMs": {
+    "p50": 1107.4130859375,
+    "p95": 1576.18798828125,
+    "p99": 1630.154052734375
+  },
+  "orderMaxMs": 1630.155029296875,
+  "outcomes": {
+    "PROCESSING:queued": 100,
+    "REJECTED:busy": 3019,
+    "REJECTED:sold_out": 5660,
+    "invalid_response": 1221
+  },
+  "httpStatuses": {
+    "202": 100,
+    "429": 3019,
+    "409": 5660,
+    "504": 1221
+  },
+  "directApiAdmissions": [
+    26.0,
+    46.0,
+    28.0
+  ],
+  "admissionsWithinFirstSecond": 100,
+  "lastAdmissionRelativeMs": 360,
+  "invariants": {
+    "noOversell": true,
+    "uniqueAllocations": true,
+    "stockConserved": true,
+    "mappingsMatch": true,
+    "uniqueOrders": true,
+    "drained": true,
+    "ordersMatchAdmissions": true,
+    "acknowledgedPreserved": true,
+    "admissionsWithinWindow": true,
+    "orderLatencyObserved": true,
+    "orderP99UnderTwoSeconds": true,
+    "allOrdersWithinTenSeconds": true,
+    "orderObserverHealthy": true,
+    "filled": true
+  },
+  "proxyTimeoutStages": {
+    "connecting": 941,
+    "reading": 280
+  },
+  "proxyMetricsNoLiveUpstreams": true,
+  "pollErrors": [
+    {
+      "at": "2026-10-16T16:56:18.309Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:18.466Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:18.581Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:18.690Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:18.810Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:18.954Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:19.062Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:19.165Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:19.275Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:19.413Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:19.661Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:19.802Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:19.980Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.093Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.202Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.340Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.459Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.593Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.699Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.802Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:20.908Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.014Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.119Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.222Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.326Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.431Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.543Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.647Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.750Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.852Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:21.956Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:22.059Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:22.173Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:22.278Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:22.542Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    },
+    {
+      "at": "2026-10-16T16:56:23.094Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    }
+  ]
+}

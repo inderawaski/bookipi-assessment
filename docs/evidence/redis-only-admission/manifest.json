@@ -1,0 +1,127 @@
+[
+  {
+    "path": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d/spike-10k/compose.yaml.gz",
+    "originalBytes": 5659,
+    "sha256": "72f13265b4a695cf214957aa4ca79856547c814c6106696801bb815c458dcf36"
+  },
+  {
+    "path": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d/spike-10k/host.json.gz",
+    "originalBytes": 37799,
+    "sha256": "d8831e9ab0fb0cfe921fcb14b80b90b9985a227bd9b69142bb0ac05c9170f2ce"
+  },
+  {
+    "path": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d/spike-10k/network-after.txt.gz",
+    "originalBytes": 26041,
+    "sha256": "da2a9fe99537b903ba3d1544d76f35b3f18b1560acff2a8a31ed036a5a6b38f9"
+  },
+  {
+    "path": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d/spike-10k/resources.jsonl.gz",
+    "originalBytes": 93631,
+    "sha256": "747166ea03c40559a93af36fa5844ac73a9a65f91c3ac0d2e57ce77401141749"
+  },
+  {
+    "path": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d/spike-10k/result.json.gz",
+    "originalBytes": 4189712,
+    "sha256": "c5eabd4c73b643992ff1420f4e7a5b71da041361ef9a887abb58e304265c4ba4"
+  },
+  {
+    "path": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d/spike-10k/services.log.gz",
+    "originalBytes": 2601418,
+    "sha256": "d3cba04b7a0ee58f62e4c72e31a65a0d1341f0da370dd2b5529f1d2273fceca4"
+  },
+  {
+    "path": "flash-test-9654e8f9-a311-4937-ad36-44054bccff7d/spike-10k/sources.json.gz",
+    "originalBytes": 37951,
+    "sha256": "86df61c058a8da9dfa516877f872098b648e4c1f875728adb8198f4cc98e6c97"
+  },
+  {
+    "path": "flash-redis-only-3api-spike.log.gz",
+    "originalBytes": 650,
+    "sha256": "7ae3b51ff04a6a4c39b2b9fdd3ed87dfc48169c39fd99be93ffdc6c3eaf008a3"
+  },
+  {
+    "path": "red.log.gz",
+    "originalBytes": 4922,
+    "sha256": "24c70c5f33d5a3a747520528ac193d1f1f3ed1e147543c74a221acb967ea5e2c"
+  },
+  {
+    "path": "green.log.gz",
+    "originalBytes": 4038,
+    "sha256": "715acd3ac64686d288bc8b30186e9f2905b6fc394d1e5ec1541eecbde37061f7"
+  },
+  {
+    "path": "unit.log.gz",
+    "originalBytes": 4753,
+    "sha256": "a8013322498425fbf14d74ca357ca3285feb65a3c6017be3fe42e056a1fa0ada"
+  },
+  {
+    "path": "integration.log.gz",
+    "originalBytes": 25750,
+    "sha256": "bdd84bb92f76cd0eee4cd805b134227aa0f36598f934e011ccacce3860004770"
+  },
+  {
+    "path": "failure.log.gz",
+    "originalBytes": 7831,
+    "sha256": "3b4f558003d42193266129177a0aa2ff4f1a86258e595e40f42f69450f034219"
+  },
+  {
+    "path": "typecheck.log.gz",
+    "originalBytes": 1243,
+    "sha256": "22ba71d242230329b3c10762c160b460a5654b319a21a63d5ea75ea35558e4d1"
+  },
+  {
+    "path": "lint.log.gz",
+    "originalBytes": 11,
+    "sha256": "050c69da23536758722729aeda55a8d0fb9d557495ef6d33d70873a3b64a71c1"
+  },
+  {
+    "path": "build.log.gz",
+    "originalBytes": 1116,
+    "sha256": "3751055ea6369587b6c2544ce1293942a8ec7f996a63c451d32b76108df46ae7"
+  },
+  {
+    "path": "implementation-sources.json.gz",
+    "originalBytes": 329580,
+    "sha256": "ef880b698fb11fccf78f0e8605e35c8e703aa7de08d64b670bbab628e89a301f"
+  },
+  {
+    "path": "flash-test-b329e06d-fac2-4443-8bf5-771c7e8b3d7f/spike-10k/compose.yaml.gz",
+    "originalBytes": 5659,
+    "sha256": "224c08cb9baece28b032ebb672d5b8514e7f9d044df7724ec6844accde17d628"
+  },
+  {
+    "path": "flash-test-b329e06d-fac2-4443-8bf5-771c7e8b3d7f/spike-10k/host.json.gz",
+    "originalBytes": 38170,
+    "sha256": "8b371fc060aad6512bd7f0e29678252beec11fb0655369b83cad0f9ef7f9b203"
+  },
+  {
+    "path": "flash-test-b329e06d-fac2-4443-8bf5-771c7e8b3d7f/spike-10k/network-after.txt.gz",
+    "originalBytes": 26041,
+    "sha256": "580c4f1ec5e29d1ce1cb570a3266f4cfda0d0d8661f7d4f8253ab883a39b25d4"
+  },
+  {
+    "path": "flash-test-b329e06d-fac2-4443-8bf5-771c7e8b3d7f/spike-10k/resources.jsonl.gz",
+    "originalBytes": 113160,
+    "sha256": "26292f8984282f451ccfbeea511d35941b22611854ff70cc0cd5b77567182a9e"
+  },
+  {
+    "path": "flash-test-b329e06d-fac2-4443-8bf5-771c7e8b3d7f/spike-10k/result.json.gz",
+    "originalBytes": 4260271,
+    "sha256": "43e65fa3622844bc29c5a819ba1efdd93cebb6898a6d90c4155977ee8bcfce6f"
+  },
+  {
+    "path": "flash-test-b329e06d-fac2-4443-8bf5-771c7e8b3d7f/spike-10k/services.log.gz",
+    "originalBytes": 2423765,
+    "sha256": "7f52cf944d2f9f3c74366a5da6bc3b8aaa2105301da3211aae72473f9ec63fe2"
+  },
+  {
+    "path": "flash-test-b329e06d-fac2-4443-8bf5-771c7e8b3d7f/spike-10k/sources.json.gz",
+    "originalBytes": 37951,
+    "sha256": "86df61c058a8da9dfa516877f872098b648e4c1f875728adb8198f4cc98e6c97"
+  },
+  {
+    "path": "flash-redis-only-6api-spike.log.gz",
+    "originalBytes": 650,
+    "sha256": "dc854662276cac95662c69491fe02ead5b1507fdeb56b88635e3b127a1c3caac"
+  }
+]

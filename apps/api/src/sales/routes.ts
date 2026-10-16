@@ -2,13 +2,14 @@ import { correlation, type Metrics } from '@flash/operations';
 import type { FastifyInstance, FastifyError } from 'fastify';
 import { normalizeIdentifier, normalizePurchase, operationalLimits, saleRoutes, saleParamsSchema, purchaseBodySchema, lookupQuerySchema, purchaseResponseSchema, lookupResponseSchema, saleResponseSchema, purchaseHttpStatus, type PurchaseInput, type PurchaseResponse, type OrderState } from '@flash/contracts';
 import { listSales, type createDatabase } from '@flash/database';
-import { saleKey, type createRedisConnection, type RedisAdmission } from '@flash/redis';
+import { cachedSaleConfigurations, readAdmissionConfiguration, saleKey, type createRedisConnection, type RedisAdmission } from '@flash/redis';
 
 export function registerSaleRoutes(app: FastifyInstance, dependencies: {
   database: ReturnType<typeof createDatabase>;
   redis: ReturnType<typeof createRedisConnection>;
   admission: RedisAdmission;
   probe: () => Promise<void>;
+  configurationScope: string;
   webOrigin?: string;
   metrics?: Metrics;
 }) {
@@ -39,14 +40,21 @@ export function registerSaleRoutes(app: FastifyInstance, dependencies: {
   });
   const unavailable = { status: 'UNAVAILABLE', reason: 'unavailable' } as const;
   const rejected = (reason: 'invalid_input' | 'not_found') => ({ status: 'REJECTED', reason } as const);
-  async function sale(id: string) { return (await listSales(database)).find(value => value.id === id); }
+  async function sale(id: string) {
+    const preloaded = await readAdmissionConfiguration(redis, id);
+    if (preloaded) return preloaded;
+    const scope = dependencies.configurationScope;
+    const load = () => listSales(database);
+    const cached = await cachedSaleConfigurations(redis, scope, load);
+    const found = cached.find(value => value.id === id);
+    // An absent ID is a cache miss too (e.g. DB configuration not initialized yet).
+    return found ?? (await cachedSaleConfigurations(redis, scope, load, true)).find(value => value.id === id);
+  }
   async function committed(id: string, identifier: string): Promise<OrderState | undefined> {
     const result = await database.query<{ id: string }>('SELECT id FROM "order" WHERE flash_sale_id = $1 AND user_identifier = $2', [id, identifier]);
     return result.rows[0] ? { status: 'SUCCESS', orderId: result.rows[0].id } : undefined;
   }
   async function allocated(id: string, identifier: string): Promise<OrderState> {
-    const order = await committed(id, identifier);
-    if (order) return order;
     await probe();
     const confirmation = await admission.lookup(id, identifier);
     if (confirmation.status !== 'present') {
@@ -78,6 +86,8 @@ export function registerSaleRoutes(app: FastifyInstance, dependencies: {
     let id: string, identifier: string;
     try { id = normalizeIdentifier(request.params.saleId); identifier = normalizeIdentifier(request.query.identifier); } catch { return reply.code(400).send(rejected('invalid_input')); }
     try {
+      const order = await committed(id, identifier);
+      if (order) return { status: 'AVAILABLE', order };
       if (!await sale(id)) return reply.code(404).send(rejected('not_found'));
       return { status: 'AVAILABLE', order: await allocated(id, identifier) };
     } catch { return reply.code(503).send(unavailable); }
@@ -85,10 +95,8 @@ export function registerSaleRoutes(app: FastifyInstance, dependencies: {
   app.post<{ Params: { saleId: string }; Body: PurchaseInput }>(saleRoutes.purchase, { schema: { params: saleParamsSchema, body: purchaseBodySchema, response: { default: purchaseResponseSchema } } }, async (request, reply) => {
     let payload;
     try { payload = normalizePurchase(request.params.saleId, request.body); } catch { return reply.code(400).send(rejected('invalid_input')); }
-    try {
-      if (!await sale(payload.saleId)) return reply.code(404).send(rejected('not_found'));
-      await probe();
-    } catch { return reply.code(503).send({ status: 'REJECTED', reason: 'unavailable' }); }
+    // Configuration, sale window, stock and restart/fault fences are checked by
+    // Redis Lua. PostgreSQL and reconciliation probes stay off the admission path.
     let result: PurchaseResponse = await admission.place(payload.saleId, payload);
     const outcome = result.status === 'NOT_ORDERED' ? 'uncertain' : result.status === 'REJECTED' ? result.reason : result.status === 'PROCESSING' && result.phase === 'confirming' ? 'uncertain' : 'admitted';
     request.log.info({ requestKeyHash: correlation(payload.idempotencyKey), reservationHash: correlation(payload.saleId + ':' + payload.identifier), outcome }, 'Purchase admission');
