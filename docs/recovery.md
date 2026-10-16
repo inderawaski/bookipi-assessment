@@ -1,49 +1,84 @@
-# Retry and recovery operations
+# Local recovery runbook
 
-Workers reserve a durable attempt before processing. `ORDER_MAX_ATTEMPTS` defaults to 5
-(range 1–100). `ORDER_RETRY_BASE_MS` defaults to 1000 (1–60000), and
-`ORDER_RETRY_MAX_MS` defaults to 60000 (1–3600000). For attempt n, the delay is
-uniform jitter between half and all of min(max interval, base interval × 2^(n−1)).
-An interrupted attempt has a 60-second recovery delay, above the bounded database
-and durability operation deadlines. Even a crash before processing consumes an attempt.
-Redis Streams retain pending messages; reservations and stock are never released.
-Exhaustion means PROCESSING/delayed, requiring operator replay after remediation.
-Retry records retain attempts, nextAt, reason, exhausted, and schema version.
+Guarantee: acknowledged placements survive service crashes/restarts with Redis/PostgreSQL volumes intact. Storage loss/corruption is outside scope. Never delete volumes as a recovery action.
 
-Build packages first (`pnpm --filter './packages/**' build`), then use:
+## Safety rules
+
+1. Keep admission unavailable while Redis restores or accounting is inconsistent.
+2. Do not replenish stock by rerunning seed or subtracting only finalized orders.
+3. Preserve pending reservations, queue entries and retry metadata.
+4. Missing state during outage is not definitive rejection.
+5. Replays use existing reservation identity and idempotent database writes; never create a second allocation.
+6. Internal failures do not expire reservations or permanently fail valid orders.
+
+## API outage or lost response
+
+Restart API. Client looks up sale+normalized identifier. If the submission is still in memory, retry with its original key. A confirmed reservation or committed order is returned. An unresolved durability/send outcome stays confirming until reconciled. No public attempt ID is required.
+
+## Redis outage/restart
+
+Stop/fence new admission. Restore from AOF on the existing volume. Verify configuration, persistence and key schema. Compare recovered reservations and queued work with committed PostgreSQL orders. Repair stale completed status and replayable unfinished work. Account for the union of allocations without double subtraction. Reopen only after invariant checks and fencing of pre-recovery commands succeed.
+
+If records are missing or inconsistent, keep readiness closed. A pending old command must not execute after a definitive rejection. Escalate to operator investigation rather than guessing inventory.
+
+On startup and Redis epoch changes, each service readiness path fences admission and reconciles durable PostgreSQL orders against Redis reservations. Matching orders repair completion markers; missing stream entries are recreated atomically with retry/quarantine metadata transferred. This is the normal repair path, not a separate repair CLI. Restart services against the existing volumes:
 
 ```sh
-node --env-file=.env scripts/recovery.mjs inspect SALE
-node --env-file=.env scripts/recovery.mjs replay SALE STREAM_ID
+docker compose stop api worker
+docker compose up -d --wait postgres redis
+docker compose start api worker
+docker compose logs --tail=200 api worker
+curl -i http://localhost:8080/api/health/ready
+node --env-file=.env scripts/recovery.mjs inspect flash-sale
+docker compose exec redis redis-cli CONFIG GET appendonly appendfsync maxmemory-policy
+docker compose exec redis redis-cli INFO persistence
+docker compose exec postgres psql -U flash -d flash -c 'TABLE flash_sale;'
+docker compose exec postgres psql -U flash -d flash -c 'TABLE "order";'
 ```
 
-Inspection intentionally prints internal stream keys and reasons for the operator.
-Service recovery logs omit customer identifiers and request keys. Replay atomically
-rearms only exhausted work whose recovery delay has elapsed. Repeating the command
-while work is eligible/running has no effect; a later, newly exhausted budget can be
-explicitly replayed again. Quarantined identity conflicts require investigation,
-not automatic replay. If a durability reply is lost, repeating replay is safe.
-A Redis outage does not reset budgets; workers reconnect with a 1–2 second loop backoff.
+Use the configured database/user if changed from the example. Stop all API replicas to fence incoming requests operationally; stopping workers also prevents concurrent repair during inspection. Application epoch fencing still protects reconnects and unresolved old commands. Do not use CLIENT PAUSE as proof of absence.
 
-On process startup and Redis epoch changes, readiness reconciles the complete durable
-order snapshot against retained reservations. Admission is fenced before validation.
-Matching orders repair completion markers without decrementing stock. Reservations
-missing stream entries receive new entries atomically with updated reservation pointers
-and transferred retry/quarantine metadata. Rerunning after interruption is safe.
-Unexplained counts, missing order allocations, conflicting timestamps, unknown schema,
-expiring state, wrong key types, and inconsistent associations keep admission fenced.
-Inspect PostgreSQL orders, Redis configuration, mappings, reservations, stream, and
-retry metadata; preserve storage and diagnose the mismatch before repair. Never
-increment stock to work around delayed orders. Recovery scans are startup operations,
-not admission-path work; large sales can delay readiness while the atomic scan runs.
+Inspection prints `reconciliation` (stored recovery diagnostic), `retries` and `quarantine`. A null diagnostic alone is insufficient: all replicas must become ready, Redis persistence must be healthy, and allocation/order associations must reconcile. Unknown schema, expiring/wrong-type state, missing allocations or unexplained counts leave readiness closed. Inspect logs and retained data; there is no generic force-reopen command. If reconciliation cannot repair the inconsistency, preserve storage and investigate rather than hand-editing stock.
 
-`configure` is idempotent and rejects conflicting configuration. There is no production
-reset command. The service test runner generates an isolated `flash-test-UUID` project
-and a `flash_test` database. Integration runs remove their disposable volumes; failure
-runs retain volumes and evidence for inspection. See [the failure matrix](failure-matrix.md).
+## Worker outage
 
-Human checkpoint C (requires a person; not recorded as completed): configure a sale,
-reserve one unit, stop the worker, restart it and confirm exactly one order. Repeat
-with PostgreSQL unavailable until the finite attempt budget exhausts; inspect the
-reason/count, restore PostgreSQL, replay twice and confirm one order and unchanged
-remaining stock. Run `pnpm test:integration` and `pnpm test:failure` for automated evidence.
+Restart worker. Reclaim idle pending messages after the documented threshold. Ensure message admission is durable before finalization. Replayed committed orders are success; completion status/ack can safely repeat. A slow original worker and a reclaiming worker must still produce one order.
+
+## PostgreSQL outage or unknown commit
+
+Retain reservation and message; retry with backoff. After recovery check existing order under unique(sale,identifier). Lost commit response must not cause another allocation. PostgreSQL persistence configuration must honor durable commits.
+
+## Retry exhaustion
+
+Work becomes delayed recovery, still PROCESSING for the user. Inspect retry reason, original reservation and existing order. Replay through the normal idempotent path. Repeated replay is safe. Record remediation evidence; do not release stock to another buyer.
+
+Build local packages once with `pnpm --filter './packages/**' build`; local scripts use the localhost URLs in `.env`, while Compose services use internal hostnames.
+
+```sh
+node --env-file=.env scripts/recovery.mjs inspect flash-sale
+# Copy an actual exhausted stream ID from retries; this is only an example:
+node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0
+node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0
+```
+
+Replay atomically rearms exhausted work only after its recovery delay. Repeating while eligible/running has no effect; a later exhausted budget may be explicitly replayed again. Output “Replay requested” is not proof of completion: poll identifier status, inspect retry metadata and check the database. Lost replay durability replies can be retried safely. Identity conflicts appear in the quarantine hash and require investigation.
+
+Defaults: `ORDER_MAX_ATTEMPTS=5` (1–100), `ORDER_RETRY_BASE_MS=1000` (1–60000), `ORDER_RETRY_MAX_MS=60000` (1–3600000). Attempt n waits uniform jitter between half and all of min(cap, base × 2^(n−1)). A reserved attempt interrupted by a crash consumes budget and waits 60 seconds. Pending reclaim also uses a 60-second safety interval. Workers reconnect with 1–2 second loop backoff; each processes sequentially in read/claim batches of ten. Redis retry records retain attempts, nextAt, reason, exhausted and schema version. Neither exhaustion nor quarantine releases inventory.
+
+## Readiness and completion checks
+
+* Redis AOF enabled everysec, noeviction, expected schema/configuration.
+* PostgreSQL reachable with constraints and migrations applied.
+* Pending and finalized allocation accounting <= initial stock.
+* At most one allocation/order per sale+identifier.
+* All acknowledged admissions remain recoverable.
+* No unresolved inconsistency or old command capable of invalidating a definitive rejection.
+
+After service recovery, allow workers to drain and verify acknowledged reservations have one completed order. Record backlog/drain time. Test-only reset belongs to a separate disposable environment and is never a production/demo recovery procedure.
+## Disposable test reset (destructive)
+
+There is no demonstration reset command. `configure` is idempotent, not a replenishment tool. Integration/stress runners generate isolated `flash-test-UUID` projects and a `flash_test` database and delete only their own volumes. Failure runners remove containers but retain volumes and evidence under `test-results/failure/PROJECT/`.
+
+Only after inspecting a completed disposable failure run, remove its exact two volumes with `docker volume rm PROJECT_postgres-test-data PROJECT_redis-test-data`, replacing PROJECT with that runner's printed project name. Verify `docker volume inspect` labels identify that isolated project first. Never target `flash-sale` volumes, use global prune, FLUSHALL, or truncate demonstration tables as recovery.
+
+Human checkpoint C and G are pending. Record sale configuration, existing reservation identifiers, remaining stock and order count before/after restart or identical configuration retry. Confirm each reservation remains held and each acknowledged admission eventually has exactly one order. Automated evidence: [failure matrix](failure-matrix.md), [integration mapping](integration-coverage.md), [measured recovery](stress-results.md). Record backlog/drain time separately from readiness recovery.

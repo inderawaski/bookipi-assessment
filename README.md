@@ -1,132 +1,80 @@
-# Flash sale prototype
+# High-throughput flash sale assessment
 
-The workspace includes the test foundation, sale configuration, shared public contracts and [atomic Redis admission](docs/redis-admission.md). Durability confirmation, worker consumption, HTTP purchase routes and the reactive purchase page follow in DEV-10–DEV-15. The worker currently exposes dependency health and does not consume orders.
+A single-product flash sale demonstration using TypeScript, Fastify, React, Redis Streams and PostgreSQL. Redis performs atomic admission and stock reservation; workers finalize orders asynchronously. The interface actively retrieves sale and order status.
 
-## Start from a fresh checkout
+## Behavior
 
-Install Node **22.23.2**, pnpm **11.25.0**, and Docker Engine/Desktop with Compose v2. Use `corepack prepare pnpm@11.25.0 --activate` if pnpm is not installed. Docker must be running.
+Enter a nonempty user identifier and select Buy Now during the sale. Identifiers are trimmed and lowercased; they are not authenticated accounts. Each identifier may secure one unit per sale.
+
+Requests are admitted in authoritative Redis execution order. Stock is reserved at admission, protecting accepted buyers from slow processing. The sale window is start-inclusive/end-exclusive and governs admission, not completion. A placed order is acknowledged only after local Redis persistence is confirmed. Uncertain requests show processing/confirming. Internal failures delay processing without revoking reservations.
+
+The page reports upcoming, active, ended and sold out; explicit duplicate feedback; and processing/success. Accidental duplicate submissions reuse one in-memory request key. Refresh uses identifier-based lookup. There is no payment, authentication, catalogue, quantity selector or admin interface.
+
+## Architecture and trade-offs
+
+See [architecture](<docs/architecture.md>) for the system diagram and complete flow, [decisions](<docs/decisions.md>) for rationale, [recovery](<docs/recovery.md>) for failure handling, and [testing](<docs/testing.md>) for test strategy and results.
+
+Redis uses AOF everysec with explicit durability confirmation before acknowledging placement. This trades acknowledgement latency for durability and persistence batching. API and worker instances scale independently; Redis remains the single-sale admission limit. PostgreSQL uses an order uniqueness constraint for safe replay. Local service crashes with intact volumes are handled; storage loss and host/regional redundancy are excluded.
+
+## Prerequisites
+
+Validated environment: macOS arm64 (Darwin 25.5.0), Apple M4 Pro / 24 GiB, Docker Desktop 4.88.1, Engine 29.7.2, Compose 5.4.0; Docker VM 12 CPUs / 7.748 GiB. This is measured host configuration, not a minimum resource guarantee. Linux containers are required; other hosts need their own verification. Images pin Node 22.23.2, PostgreSQL 18.3, Redis 7.4.8 (supports WAITAOF) and Nginx 1.28.2. Install local Node 22.23.2 and pnpm 11.25.0 for operator scripts/tests. Git and a running Docker daemon are required. Free localhost ports 8080, 5432 and 6379; browser tests additionally use 4173.
+
+## Build and run
+
+Obtain this source checkout, then run from its root. No source remote is configured in the supplied checkout; the submission repository URL is still unavailable and must be supplied before submission. Do not interpret this as a published repository.
 
 ```sh
 cp .env.example .env
 pnpm install --frozen-lockfile
 pnpm build
-pnpm typecheck
-pnpm lint
-pnpm test:unit
-
-docker compose build
-docker compose up -d --wait
-curl --fail http://localhost:8080/api/health/live
-curl --fail http://localhost:8080/api/health/ready
+docker compose up -d --wait postgres redis
+pnpm db:migrate
 ```
 
-Open [localhost:8080](http://localhost:8080). Example credentials are local demonstration values; `.env` is ignored. URL-encode special characters when constructing database URLs. Do not expose these development services to an untrusted network.
-
-For local application development, start only dependencies with `docker compose up -d --wait postgres redis`, then run `pnpm --filter @flash/api start` and `pnpm --filter @flash/worker start` after building. Start Vite with `pnpm dev:web`. The backend start commands load root `.env` using Node. Vite proxies `/api` to the local API at port 3000. Open `http://localhost:5173/?sale=sale-1` (or `http://localhost:8080/?sale=sale-1` with Compose) using your configured sale ID. The default sale ID is `flash-sale`. Identifiers are optionally remembered in local storage; request keys are held only in memory. A lost purchase response can be retried with the same key; pending orders continue polling with backoff capped at 30 seconds, including after closure. The countdown is an estimate; the backend authorizes admission.
-
-## Layout
-
-- `apps/api`, `apps/worker`, `apps/web`: separate executable boundaries.
-- `packages/configuration`: validated environment parsing; required URLs fail before listening.
-- `packages/database`: bounded PostgreSQL pools, connection and query timeouts.
-- `packages/redis`: named connection roles and persistence capability checks.
-- `packages/contracts`: shared health and public sale schemas, identity normalization and state rules ([contract and checkpoint A](docs/public-contract.md)).
-- `tests/integration`, `tests/failure`, `tests/browser`, `tests/stress`: isolated service checks, failure foundation, browser smoke and the legacy k6 readiness smoke. `scripts/stress` owns the one-second burst harness.
-- `deploy`, `scripts`, `docs`: infrastructure, test orchestration and operational notes.
-
-There are no business domains yet. Subsequent sale code should be grouped by capability inside these boundaries. The two backend entry points intentionally have a small amount of identical lifecycle glue so neither application imports the other.
-
-## Services and resource limits
-
-| Service | Host port | Container port | CPU limit | Memory limit |
-| --- | --- | --- | --- | --- |
-| Proxy | 127.0.0.1:8080 (`HTTP_PORT`) | 80 | 0.5 | 64 MiB |
-| Web | none | 80 | 0.5 | 64 MiB |
-| API | none | 3000 | 1 | 512 MiB |
-| Worker health | none | 3001 | 1 | 512 MiB |
-| PostgreSQL | 127.0.0.1:5432 | 5432 | 1 | 512 MiB |
-| Redis | 127.0.0.1:6379 | 6379 | 1 | 512 MiB |
-
-These are development budgets, not measured capacity recommendations. Redis maxmemory is 256 MiB, leaving container headroom for AOF and client buffers. Pools default to 10 connections per API/worker; dependency timeouts default to 2000 ms. API body limit and proxy body limit are 16 KiB infrastructure limits, not business identifier rules.
-
-`/health/live` means the process can serve HTTP. `/health/ready` actively queries PostgreSQL and verifies Redis AOF everysec, noeviction and WAITAOF support; failures return 503 with no connection details. Startup requires these checks to pass. Worker readiness covers dependency access only until consumption is implemented. Web health checks static serving; proxy/API readiness is available at `/api/health/ready`.
+Configure before opening. Generate UTC times five minutes ahead and a one-hour window, so the example remains usable on any date:
 
 ```sh
-docker compose up -d --scale api=3 --scale worker=2 --wait
+SALE_START=$(node -p 'new Date(Date.now()+300000).toISOString()')
+SALE_END=$(node -p 'new Date(Date.now()+3900000).toISOString()')
+pnpm sale:configure flash-sale "$SALE_START" "$SALE_END" 100
+docker compose up --build -d --wait
 ```
 
-API replicas have no fixed host ports or container names. Nginx resolves Docker DNS upstream membership every five seconds. This supports basic horizontal routing; admission, bounded overload handling and scaling measurements belong to later tickets. Readiness does not yet implement queue/backlog acceptance policy.
+The configuration CLI accepts exactly `ID START_ISO END_ISO STOCK`; retain those values for an identical retry. Existing sales cannot have their times or initial stock changed. Do not regenerate times and reuse an existing ID. Use a new ID for a new sale and open `/?sale=that-id`. If setup misses opening before Redis initialization, do not bypass the safety check.
 
-## Persistence and connection ownership
-
-PostgreSQL and Redis use named volumes (`postgres-data`, `redis-data`) scoped to the Compose project. Redis is pinned above 7.2 and uses the same configuration in demonstration and stress environments: AOF enabled, fsync every second, no eviction. There is no unsafe benchmark persistence profile.
-
-Every `createRedisConnection` call owns a separate physical connection:
-
-- `commands`: short, bounded traffic such as readiness; command timeout and offline queue rejection enabled.
-- `blocking-consumer`: a dedicated socket per consumer for finite `XREADGROUP BLOCK` calls; never the API command socket.
-- `durability`: exclusive ownership for a write and its subsequent `WAITAOF`; do not interleave concurrent write/barrier sequences. WAITAOF covers preceding writes on **that connection**. A separate socket that did not perform the write is not a valid durability barrier.
-
-The Redis package supplies atomic reservation and stream append; durability confirmation is deferred to DEV-10. Future callers must use finite Redis BLOCK/WAITAOF timeouts and handle uncertain outcomes as specified in DEV-10.
-
-Restart without removing volumes:
+Open [the purchase page](http://localhost:8080/?sale=flash-sale). Same-origin endpoints: `GET /api/sales/flash-sale`, `POST /api/sales/flash-sale/purchases`, `GET /api/sales/flash-sale/order?identifier=buyer`, `GET /api/health/live`, `GET /api/health/ready`, `GET /api/metrics`. See [request examples and limits](docs/public-contract.md).
 
 ```sh
-docker compose restart postgres redis api worker
-docker compose up -d --wait
-curl --fail http://localhost:8080/api/health/ready
+docker compose up -d --scale api=2 --scale worker=2
+docker compose ps
+docker compose logs --tail=100 api worker
+docker compose stop
+docker compose start
 ```
 
-`docker compose down` preserves volumes. Do not use `down --volumes` for the demonstration. A real-service test writes isolated markers, restarts dependencies and checks that the markers remain. PostgreSQL 18 uses its versioned data layout under the mounted `/var/lib/postgresql` directory.
+The proxy resolves API replicas; API/worker ports are internal. Worker health can be checked with `docker compose exec worker node -e "fetch('http://127.0.0.1:3001/health/ready').then(async r=>console.log(r.status,await r.text()))"`. `docker compose down` also preserves named volumes; recreate with `docker compose up -d`. Never add `--volumes` to a demo shutdown. The environment example contains local-only credentials and binds infrastructure to loopback.
 
-## Verification
+Configuration is idempotent and cannot replenish inventory on restart. Times and initial stock cannot be changed after admission initialization. Resetting disposable test data is a separate explicitly destructive operation and must not target demonstration volumes.
 
-```sh
-pnpm build
-pnpm typecheck
-pnpm lint
-pnpm test:unit
-pnpm test:integration
-pnpm test:failure
-pnpm exec playwright install chromium
-pnpm test:browser
-pnpm test:stress
-```
+## Tests
 
-Service tests use a standalone Compose file, random project names, dynamic localhost ports, a dedicated `flash_test` database and their own volumes. The runner passes only its discovered endpoints, and cleans up only its generated project. It never reads `DATABASE_URL`/`REDIS_URL` for test data or calls FLUSHALL/TRUNCATE on demonstration services. Tests refuse invocation without the runner's isolation marker. Browser tests start their own Vite server and refuse to reuse an existing one. Unit tests need no running services; their command builds the shared packages first.
+See [testing commands, coverage and evidence](docs/testing.md). Run `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test`, `pnpm test:integration`, `pnpm exec playwright install chromium`, `pnpm test:browser`, `pnpm test:failure` and `pnpm test:stress stock100-1k`. Service/stress runners create random isolated projects. Integration/stress cleanup deletes only their disposable volumes; failure runs retain their own volumes. Browser tests use stub HTTP and start Vite automatically.
 
-Stress service containers each have a 1 CPU / 512 MiB limit. `pnpm test:stress` runs the five prescribed sale bursts, separate new-key duplicate and same-key retry cases, and DEV-19 boundary/recovery/calibration scenarios using a host Node generator with preconnected sockets. See the [harness guide](scripts/stress/README.md) for dispatch validation, capacity reruns, artifacts, and isolated cleanup. Use `pnpm test:stress stock100-1k` for the smallest case and `pnpm test:harness` for accounting and real socket timing tests. The legacy k6 script remains a readiness smoke check. The [DEV-16 coverage matrix](docs/integration-coverage.md) maps business invariants to executable tests. DEV-17 adds deterministic crash boundaries; DEV-19 adds scaling, boundary, polling and recovery experiments; see the [measured results and limitations](docs/stress-results.md). Docker Desktop storage and its VM filesystem can have substantially different AOF/fsync latency from bare-metal Linux: record host/VM resources, storage, achieved dispatch, response latency and drain time when benchmarking.
+The stress suite dispatches 1k, 10k and 100k-request scenarios within one second, including 100-stock and 10k-stock cases and duplicate identifiers. Additional tests cover opening/closing boundaries, multi-instance operation, overload and crash recovery. Actual dispatch timing validates the generator; response completion/queue drain are separate measurements.
 
-See [docs/framework-guides.md](docs/framework-guides.md) for the official guides consulted and [docs/verification.md](docs/verification.md) for the current verification record.
+Expected correctness: no overselling; one allocation/order per identifier per sale; acknowledged admissions survive local crashes and complete once services/recovery restore operation. Saturation can return retryable busy before admission. Uncertain responses are reconciled rather than counted as rejection.
 
-Sale schema, migration/configuration commands, identifier limits, and partial-initialization recovery: [sale configuration](docs/sale-configuration.md).
+## Stress results
 
-### Durable order worker (DEV-11)
+[Measured results](docs/stress-results.md) and [raw artifacts/manifest](docs/evidence/dev19/manifest.json) report three valid prescribed bursts and two invalid 100k bursts. On the M4 Pro host above, the valid 10k-unique run (one API / three workers, 5,000 sockets) wrote its last request at 947.11 ms: 8,975 busy, 21 confirming, 26 queued/delayed, 978 non-JSON proxy responses; 47 admissions became 47 orders. Response p95/p99: 2,693.43 / 2,753.62 ms; drain after responses: 38.08 s; all accounting invariants passed. The stress proxy uses one CPU / 512 MiB, larger than the demo proxy. Both 100k bursts exceeded one second; measured 100k/s capacity is unproven. Bounded admission slots, AOF cadence, serial worker drain and generator/ingress saturation are documented limits. The full per-scenario table is in [testing](docs/testing.md).
 
-The worker consumes each sale's stream through the `orders` consumer group using
-separate blocking-read and command connections. Each delivery confirms local AOF
-admission durability before opening a PostgreSQL transaction. The unique
-`(flash_sale_id, user_identifier)` constraint serializes replays and concurrent
-workers; matching admission timestamps reuse the existing order. A missing commit
-reply leaves the delivery pending so retry resolves through that same constraint.
-Only a confirmed commit permits writing the identifier-to-order mapping in
-`<sale admission key>:completed`, followed by `XACK`. Neither acknowledgement nor
-completion deletes stream entries or releases reservations. Processing uses the
-original admission timestamp and does not recheck the sale window.
+## Recovery and limitations
 
-Pending deliveries become eligible for reclamation after 60 seconds, well beyond
-the normal durability and database statement deadlines. PostgreSQL uniqueness
-still protects a slow original worker that resumes after reclamation. Conflicting
-identity metadata is retained in `<sale admission key>:quarantine`, keyed by stream
-ID; the original entry remains pending for investigation. Transient failures remain
-pending. Bounded retry policies, operator replay, and connection recovery are the
-follow-up DEV-12 scope.
+Use [recovery runbook](<docs/recovery.md>) to inspect pending work and replay delayed processing. Never restore stock by simply rerunning seed or subtracting finalized orders alone. Pending reservations also consume stock. Missing data during outage is not definitive rejection.
 
-Run `pnpm test:integration -- tests/integration/orders.test.ts` with Docker running
-for real PostgreSQL/Redis concurrent-delivery evidence. Unit tests exercise
-transaction rollback, uncertain commit replies, and failures between commit,
-completion publication, and acknowledgement.
+No payment, fraud, shipping eligibility or other external business rejection exists; valid admitted work has no defined permanent business failure. Eventual success assumes service recovery/manual remediation and intact persistent storage. The system does not verify human identity. Future authentication could introduce a user foreign key; multiple products require a product entity and revised relationships.
 
-Retry configuration, operator inspection/replay, reconciliation and checkpoint C: [Recovery runbook](docs/recovery.md).
+Operator examples: `node --env-file=.env scripts/recovery.mjs inspect flash-sale` and `node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0` (replace the example stream ID with the inspected exhausted entry). Read the runbook first. [Operational limits](docs/operations.md) describe bounded pools, proxy deadlines and retained-stream storage growth.
 
-Operational limits, replica scaling and metric semantics: [operations guide](docs/operations.md).
+The final submission commit is obtained with `git rev-parse HEAD` after committing; no final submission revision or repository URL has yet been recorded. Human checkpoint G remains pending: a person must follow the [fresh-checkout rehearsal](docs/testing.md#human-checkpoint-g) and record evidence before acceptance.
