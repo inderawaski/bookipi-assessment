@@ -82,4 +82,6 @@ No payment, fraud, shipping eligibility or other external business rejection exi
 
 Operator examples: `node --env-file=.env scripts/recovery.mjs inspect flash-sale` and `node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0` (replace the example stream ID with the inspected exhausted entry). Read the runbook first. [Operational limits](docs/operations.md) describe bounded pools, proxy deadlines and retained-stream storage growth.
 
+See the [final requirement audit, verification receipt and submission walkthrough](docs/submission-audit.md). Run `node scripts/submission-check.mjs` from a clean final commit to collect SHA-pinned evidence. Performance gaps and human approvals remain explicit submission gates.
+
 Record the final submission commit with `git rev-parse HEAD`. Human checkpoint G remains pending: a person must follow the [fresh-checkout rehearsal](docs/testing.md#human-checkpoint-g) and record evidence before acceptance.

@@ -19,7 +19,7 @@
     "dev:web": "pnpm --filter @flash/web dev",
     "db:migrate": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs migrate",
     "sale:configure": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs configure",
-    "test:harness": "node --test scripts/stress/*.test.mjs"
+    "test:harness": "node --test scripts/stress/*.test.mjs scripts/submission-check.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -127,6 +127,10 @@ Countdown rendering is exercised in browser scenarios; no standalone countdown u
 
 On 16 October 2026, `pnpm lint`, `pnpm typecheck`, `pnpm build`, both demonstration/test Compose configuration checks, operator-script syntax checks and relative documentation-link checks passed. `pnpm test` passed 68 unit tests and 10 harness tests after allowing localhost socket access; the initial sandbox run failed with `listen EPERM`. No application changes were needed. Integration, failure, browser, full fresh-checkout Docker walkthrough and stress suites were not rerun for this documentation change; their historical results are identified above. Existing demonstration reservations were not modified. Human checkpoint G is still pending.
 
+## Final submission audit
+
+[DEV-22 requirement traceability and rehearsal](submission-audit.md) maps the full behavioral contract to code, tests and deliverables, defines the final-commit verification receipt and records pending human/performance acceptance gates. Run `node scripts/submission-check.mjs` only after committing all changes; preserve its ignored evidence alongside the exact verified revision.
+
 ## Human checkpoint G
 
 **Pending; automated checks do not record human approval.** On a fresh checkout, a person should:
