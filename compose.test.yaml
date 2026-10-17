@@ -9,10 +9,14 @@ services:
       POSTGRES_USER: flash_test
       POSTGRES_PASSWORD: test_only
       POSTGRES_DB: flash_test
-    ports: ["127.0.0.1:${TEST_POSTGRES_PORT:-0}:5432"]
-    volumes: ["postgres-test-data:/var/lib/postgresql"]
+    ports: ['127.0.0.1:${TEST_POSTGRES_PORT:-0}:5432']
+    volumes: ['postgres-test-data:/var/lib/postgresql']
     healthcheck:
-      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_PASSWORD\" psql --no-password -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" -v ON_ERROR_STOP=1 -tAc 'SELECT 1' >/dev/null"]
+      test:
+        [
+          'CMD-SHELL',
+          'PGPASSWORD="$$POSTGRES_PASSWORD" psql --no-password -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v ON_ERROR_STOP=1 -tAc ''SELECT 1'' >/dev/null',
+        ]
       interval: 1s
       timeout: 2s
       retries: 30
@@ -20,11 +24,15 @@ services:
     image: redis:7.4.8-alpine
     cpus: 1.0
     mem_limit: 512m
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
-    ports: ["127.0.0.1:${TEST_REDIS_PORT:-0}:6379"]
-    volumes: ["redis-test-data:/data", "./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro"]
+    command: ['redis-server', '/usr/local/etc/redis/redis.conf']
+    ports: ['127.0.0.1:${TEST_REDIS_PORT:-0}:6379']
+    volumes:
+      [
+        'redis-test-data:/data',
+        './deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro',
+      ]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 1s
       timeout: 2s
       retries: 30
@@ -32,20 +40,37 @@ services:
     image: redis:7.4.8-alpine
     cpus: 1.0
     mem_limit: 512m
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--replicaof", "redis", "6379", "--replica-read-only", "yes"]
-    ports: ["127.0.0.1:${TEST_REDIS_REPLICA_PORT:-0}:6379"]
-    volumes: ["redis-replica-test-data:/data", "./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro"]
+    command:
+      [
+        'redis-server',
+        '/usr/local/etc/redis/redis.conf',
+        '--replicaof',
+        'redis',
+        '6379',
+        '--replica-read-only',
+        'yes',
+      ]
+    ports: ['127.0.0.1:${TEST_REDIS_REPLICA_PORT:-0}:6379']
+    volumes:
+      [
+        'redis-replica-test-data:/data',
+        './deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro',
+      ]
     depends_on:
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli info replication | grep -q 'master_link_status:up'"]
+      test:
+        [
+          'CMD-SHELL',
+          "redis-cli info replication | grep -q 'master_link_status:up'",
+        ]
       interval: 1s
       timeout: 2s
       retries: 30
   api:
     cpus: 1.0
     mem_limit: 512m
-    profiles: ["stress"]
+    profiles: ['stress']
     build: { context: ., target: api }
     environment:
       NODE_ENV: test
@@ -55,7 +80,13 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 2s
       timeout: 3s
       retries: 30

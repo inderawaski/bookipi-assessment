@@ -3,7 +3,7 @@ services:
   api:
     deploy:
       replicas: 6
-    ports: ["127.0.0.1::3000"]
+    ports: ['127.0.0.1::3000']
   worker:
     cpus: 1.0
     mem_limit: 512m
@@ -12,12 +12,18 @@ services:
       NODE_ENV: test
       DATABASE_URL: postgresql://flash_test:test_only@postgres:5432/flash_test
       REDIS_URL: redis://redis:6379
-    ports: ["127.0.0.1::3001"]
+    ports: ['127.0.0.1::3001']
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -25,7 +31,7 @@ services:
     image: nginx:1.28.2-alpine
     cpus: 1.0
     mem_limit: 512m
-    ports: ["127.0.0.1::80"]
-    volumes: ["./deploy/stress-proxy.conf:/etc/nginx/nginx.conf:ro"]
+    ports: ['127.0.0.1::80']
+    volumes: ['./deploy/stress-proxy.conf:/etc/nginx/nginx.conf:ro']
     depends_on:
       api: { condition: service_healthy }

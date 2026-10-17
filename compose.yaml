@@ -24,10 +24,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-flash}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copy .env.example to .env}
       POSTGRES_DB: ${POSTGRES_DB:-flash}
-    ports: ["127.0.0.1:5432:5432"]
-    volumes: ["postgres-data:/var/lib/postgresql"]
+    ports: ['127.0.0.1:5432:5432']
+    volumes: ['postgres-data:/var/lib/postgresql']
     healthcheck:
-      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_PASSWORD\" psql --no-password -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" -v ON_ERROR_STOP=1 -tAc 'SELECT 1' >/dev/null"]
+      test:
+        [
+          'CMD-SHELL',
+          'PGPASSWORD="$$POSTGRES_PASSWORD" psql --no-password -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -v ON_ERROR_STOP=1 -tAc ''SELECT 1'' >/dev/null',
+        ]
       interval: 3s
       timeout: 2s
       retries: 20
@@ -36,11 +40,15 @@ services:
     restart: unless-stopped
     cpus: 1.0
     mem_limit: 512m
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
-    volumes: ["redis-data:/data", "./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro"]
-    ports: ["127.0.0.1:6379:6379"]
+    command: ['redis-server', '/usr/local/etc/redis/redis.conf']
+    volumes:
+      [
+        'redis-data:/data',
+        './deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro',
+      ]
+    ports: ['127.0.0.1:6379:6379']
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 3s
       timeout: 2s
       retries: 20
@@ -49,12 +57,29 @@ services:
     restart: unless-stopped
     cpus: 1.0
     mem_limit: 512m
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--replicaof", "redis", "6379", "--replica-read-only", "yes"]
-    volumes: ["redis-replica-data:/data", "./deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro"]
+    command:
+      [
+        'redis-server',
+        '/usr/local/etc/redis/redis.conf',
+        '--replicaof',
+        'redis',
+        '6379',
+        '--replica-read-only',
+        'yes',
+      ]
+    volumes:
+      [
+        'redis-replica-data:/data',
+        './deploy/redis.conf:/usr/local/etc/redis/redis.conf:ro',
+      ]
     depends_on:
       redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli info replication | grep -q 'master_link_status:up'"]
+      test:
+        [
+          'CMD-SHELL',
+          "redis-cli info replication | grep -q 'master_link_status:up'",
+        ]
       interval: 1s
       timeout: 2s
       retries: 30
@@ -68,7 +93,13 @@ services:
       API_PORT: 3000
       WEB_ORIGIN: ${WEB_ORIGIN:-}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -82,7 +113,13 @@ services:
       ORDER_RETRY_BASE_MS: ${ORDER_RETRY_BASE_MS:-1000}
       ORDER_RETRY_MAX_MS: ${ORDER_RETRY_MAX_MS:-60000}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -91,7 +128,8 @@ services:
     cpus: 0.5
     mem_limit: 64m
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health/live"]
+      test:
+        ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1/health/live']
       interval: 5s
       timeout: 2s
       retries: 12
@@ -99,8 +137,8 @@ services:
     image: nginx:1.28.2-alpine
     cpus: 0.5
     mem_limit: 64m
-    ports: ["127.0.0.1:${HTTP_PORT:-8080}:80"]
-    volumes: ["./deploy/proxy.conf:/etc/nginx/conf.d/default.conf:ro"]
+    ports: ['127.0.0.1:${HTTP_PORT:-8080}:80']
+    volumes: ['./deploy/proxy.conf:/etc/nginx/conf.d/default.conf:ro']
     depends_on:
       api: { condition: service_healthy }
       web: { condition: service_healthy }

@@ -5,7 +5,7 @@ export async function migrate(database: Pool) {
   const client = await database.connect();
   try {
     await client.query('BEGIN');
-    await client.query("SELECT pg_advisory_xact_lock(7007)");
+    await client.query('SELECT pg_advisory_xact_lock(7007)');
     await client.query(`
       CREATE TABLE IF NOT EXISTS flash_sale (
         id text PRIMARY KEY CHECK (length(id) > 0 AND id = lower(btrim(id))),
@@ -32,6 +32,10 @@ export async function migrate(database: Pool) {
         FOR EACH ROW EXECUTE FUNCTION protect_flash_sale();
     `);
     await client.query('COMMIT');
-  } catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { client.release(); }
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }

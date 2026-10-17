@@ -9,7 +9,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter './packages/**' build && pnpm -r typecheck && tsc --noEmit -p tsconfig.tests.json",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings=0",
     "test": "pnpm test:unit && pnpm test:harness",
     "test:unit": "pnpm --filter './packages/**' build && vitest run",
     "test:integration": "node scripts/test-services.mjs integration",
@@ -19,15 +19,26 @@
     "dev:web": "pnpm --filter @flash/web dev",
     "db:migrate": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs migrate",
     "sale:configure": "pnpm --filter './packages/**' build && node --env-file=.env scripts/sale.mjs configure",
-    "test:harness": "node --test scripts/stress/*.test.mjs scripts/submission-check.test.mjs"
+    "test:harness": "node --test scripts/stress/*.test.mjs scripts/submission-check.test.mjs",
+    "lint:fix": "pnpm lint --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.64.1",
     "@types/node": "22.19.7",
     "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "prettier": "3.9.10",
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.2",
     "vitest": "5.0.4"
+  },
+  "lint-staged": {
+    "*": "prettier --write --ignore-unknown"
   }
 }

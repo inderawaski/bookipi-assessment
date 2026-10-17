@@ -30,15 +30,15 @@ The one-second interval defines offered purchase traffic. Responses and asynchro
 
 ### Demand and inventory planning cases
 
-| Workload | Initial stock | Requests | Unique identifiers | Dispatch window |
-| --- | ---: | ---: | ---: | --- |
-| `no-oversell` | 10 | 100 | 100 | Synchronized release, writes within 1 second |
-| `duplicates` | 10 | 100 | 10 | Synchronized release, writes within 1 second |
-| `sufficient-stock` | 1,000 | 1,000 | 1,000 | 1 second |
-| `normal-burst` | 100 | 5,000 | 5,000 | 10 seconds |
-| `aggressive-burst` | 100 | 5,000 | 5,000 | 3 seconds |
-| `extreme-burst` | 100 | 5,000 | 5,000 | 1 second |
-| `spike-10k` | 100 | 10,000 | 10,000 | 1 second |
+| Workload           | Initial stock | Requests | Unique identifiers | Dispatch window                              |
+| ------------------ | ------------: | -------: | -----------------: | -------------------------------------------- |
+| `no-oversell`      |            10 |      100 |                100 | Synchronized release, writes within 1 second |
+| `duplicates`       |            10 |      100 |                 10 | Synchronized release, writes within 1 second |
+| `sufficient-stock` |         1,000 |    1,000 |              1,000 | 1 second                                     |
+| `normal-burst`     |           100 |    5,000 |              5,000 | 10 seconds                                   |
+| `aggressive-burst` |           100 |    5,000 |              5,000 | 3 seconds                                    |
+| `extreme-burst`    |           100 |    5,000 |              5,000 | 1 second                                     |
+| `spike-10k`        |           100 |   10,000 |             10,000 | 1 second                                     |
 
 These seven workloads define the planned stress suite. They separate request volume,
 distinct eligible buyers and successful-order volume. The duplicate workload
@@ -46,23 +46,23 @@ uses a distinct request key for every attempt.
 
 ### Proposed runtime settings and resource budgets
 
-| Setting | Value / behavior |
-| --- | --- |
-| Redis admission authority | One primary, one asynchronous read-only replica |
-| Redis admission pool, per process | Starts at one connection and can grow to 100 |
-| Pool acquisition timeout | 3 seconds |
-| Admission operation timeout | Default 3,000 ms, after acquisition |
-| Application HTTP concurrency guard | None; active requests are observed |
-| PostgreSQL pool | Default 10 connections per API/worker process |
-| Dependency acquisition/query timeout | Default 2,000 ms |
-| Worker read/reclaim batches | Up to 10, handled sequentially per worker |
-| Abandoned pending-entry reclaim threshold | 60,000 ms |
-| Retry budget | Default 5 attempts; jittered exponential delay, 1,000-ms base, 60,000-ms cap |
-| Redis persistence and memory | AOF every second; 256-MB maxmemory; noeviction |
-| API/worker/PostgreSQL/Redis container budget | 1 CPU and 512 MiB per container |
-| Planned API / worker replicas | Six APIs / one worker, pre-scaled before the sale |
-| Local proxy and web container budget | 0.5 CPU and 64 MiB each |
-| Planned validation proxy budget | 1 CPU and 512 MiB |
+| Setting                                      | Value / behavior                                                             |
+| -------------------------------------------- | ---------------------------------------------------------------------------- |
+| Redis admission authority                    | One primary, one asynchronous read-only replica                              |
+| Redis admission pool, per process            | Starts at one connection and can grow to 100                                 |
+| Pool acquisition timeout                     | 3 seconds                                                                    |
+| Admission operation timeout                  | Default 3,000 ms, after acquisition                                          |
+| Application HTTP concurrency guard           | None; active requests are observed                                           |
+| PostgreSQL pool                              | Default 10 connections per API/worker process                                |
+| Dependency acquisition/query timeout         | Default 2,000 ms                                                             |
+| Worker read/reclaim batches                  | Up to 10, handled sequentially per worker                                    |
+| Abandoned pending-entry reclaim threshold    | 60,000 ms                                                                    |
+| Retry budget                                 | Default 5 attempts; jittered exponential delay, 1,000-ms base, 60,000-ms cap |
+| Redis persistence and memory                 | AOF every second; 256-MB maxmemory; noeviction                               |
+| API/worker/PostgreSQL/Redis container budget | 1 CPU and 512 MiB per container                                              |
+| Planned API / worker replicas                | Six APIs / one worker, pre-scaled before the sale                            |
+| Local proxy and web container budget         | 0.5 CPU and 64 MiB each                                                      |
+| Planned validation proxy budget              | 1 CPU and 512 MiB                                                            |
 
 Plan to pre-scale six API instances and one worker before the sale. This is an initial provisioning choice that must be validated against the demand and latency requirements; additional replicas do not imply linear throughput.
 
@@ -72,41 +72,41 @@ Pool and resource limits are initial design budgets. Validation must use the res
 
 ### Functional requirements
 
-| Requirement | Required behavior |
-| --- | --- |
-| Configure a sale | CLI supplies ID, start/end timestamps, and initial stock before opening; identical retries are safe |
-| Show sale state | Page displays upcoming, open, ended, or sold out, with countdown and observed stock |
-| Accept an identifier | Generic nonempty text, trimmed and lowercased; no email/username syntax or authenticated account |
-| Buy one unit | Valid new admission atomically reserves exactly one unit |
-| Enforce window | Redis time must satisfy `starts_at <= now < ends_at` for a new admission |
-| Prevent duplicate allocation | One normalized identifier per sale; deliberate new-key duplicate returns explicit feedback |
-| Replay a submission | Same sale/key and normalized identifier reuses the surviving bound outcome |
-| Complete asynchronously | Worker validates reservation identity, commits order, publishes completion hint, acknowledges stream delivery |
-| Retrieve existing order | Identifier lookup returns committed success, current processing, uncertainty, or an empty observation |
-| Recover unfinished work | Reclaim pending messages, retry transient failures, retain exhausted work for operator replay |
-| Explain failure to users | Separate business rejection, service unavailability, provisional processing, and uncertain response |
+| Requirement                  | Required behavior                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Configure a sale             | CLI supplies ID, start/end timestamps, and initial stock before opening; identical retries are safe           |
+| Show sale state              | Page displays upcoming, open, ended, or sold out, with countdown and observed stock                           |
+| Accept an identifier         | Generic nonempty text, trimmed and lowercased; no email/username syntax or authenticated account              |
+| Buy one unit                 | Valid new admission atomically reserves exactly one unit                                                      |
+| Enforce window               | Redis time must satisfy `starts_at <= now < ends_at` for a new admission                                      |
+| Prevent duplicate allocation | One normalized identifier per sale; deliberate new-key duplicate returns explicit feedback                    |
+| Replay a submission          | Same sale/key and normalized identifier reuses the surviving bound outcome                                    |
+| Complete asynchronously      | Worker validates reservation identity, commits order, publishes completion hint, acknowledges stream delivery |
+| Retrieve existing order      | Identifier lookup returns committed success, current processing, uncertainty, or an empty observation         |
+| Recover unfinished work      | Reclaim pending messages, retry transient failures, retain exhausted work for operator replay                 |
+| Explain failure to users     | Separate business rejection, service unavailability, provisional processing, and uncertain response           |
 
 There is no authentication, payment, fraud decision, shipping eligibility, cart, coupon system, quantity selector, catalogue, admin UI, or separate order-history page. There is no business rejection stage after valid admission and no reservation-expiry policy.
 
 ### Non-functional requirements
 
-| Requirement | SLO / target | Rationale |
-| --- | --- | --- |
-| Opening demand | 10,000 unique purchase attempts within one second with 100 stock; zero proxy/transport errors and full allocation | Anticipation concentrates requests at opening; average sale-window traffic hides this peak |
-| Inventory accuracy | Zero negative admission stock in consistent Redis state; committed order count never exceeds initial stock | A scarce unit must not be promised to multiple final buyers |
-| Identifier uniqueness | At most one retained allocation and one committed order per normalized identifier per sale | Concurrent tabs and retries must not consume multiple units |
-| Idempotency | Same sale/key and normalized payload reuses its retained outcome; changed payload conflicts | Network retries must resolve the original attempt rather than create another allocation |
-| Order completion latency | For 100 stock and 10,000 unique opening-second attempts: admission-to-committed-order visibility p99 < 2 seconds, every order ≤ 10 seconds | Buyers need timely final confirmation; this measures successful order work separately from rejection traffic |
-| Admission acknowledgement | Return after the primary acknowledges Lua execution; do not wait for `WAITAOF`, `WAIT`, or worker completion | Keep disk/replica confirmation and database processing off the acknowledgement path; accept provisional reservation loss on Redis failure |
-| Final order durability | `SUCCESS` requires a committed PostgreSQL row; no regression from success; recovery assumes intact persistent storage | Provisional admission and final purchase must have unambiguous, different guarantees |
-| Ordering | Redis execution order governs admission; no global HTTP-arrival FIFO guarantee | Multiple processes and network paths cannot share a reliable arrival clock |
-| Consistency | Atomic stock/identity/work allocation in Redis; serialized per-sale final-order cap in PostgreSQL; status views may lag | Correctness decisions require coordination, while display freshness can tolerate delay |
-| Overload behavior | Acquisition expiry before execution returns busy; possible-send failures remain uncertain; no stock release on timeout | Rejecting before admission and losing an acknowledgement require different retry behavior |
-| Dependency bounds | Default 3-second pool acquisition, separate 3-second admission operation deadline, and 2-second DB acquisition/query timeout | Bound individual waits and expose stalls; these deadlines are not HTTP response SLOs |
-| Horizontal operation | API and worker replica counts can change independently against shared Redis and PostgreSQL | Request handling and order drain have different resource needs; this does not promise linear scaling |
-| Recovery | Retain surviving reservations through worker/database failure and retry exhaustion; fence inconsistent accounting before reopening | Infrastructure failure must not intentionally revoke stock ownership or create replenishment |
-| Availability scope | No percentage availability SLO; local persistent-storage recovery only; host/region redundancy and storage loss/corruption excluded | A numerical uptime guarantee requires a redundancy and recovery scope beyond this design |
-| Validation | Prove offered dispatch, outcome accounting, stock conservation, uniqueness, and latency independently | A fast rejection path or invalid generator interval cannot establish successful-order capacity |
+| Requirement               | SLO / target                                                                                                                               | Rationale                                                                                                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Opening demand            | 10,000 unique purchase attempts within one second with 100 stock; zero proxy/transport errors and full allocation                          | Anticipation concentrates requests at opening; average sale-window traffic hides this peak                                                |
+| Inventory accuracy        | Zero negative admission stock in consistent Redis state; committed order count never exceeds initial stock                                 | A scarce unit must not be promised to multiple final buyers                                                                               |
+| Identifier uniqueness     | At most one retained allocation and one committed order per normalized identifier per sale                                                 | Concurrent tabs and retries must not consume multiple units                                                                               |
+| Idempotency               | Same sale/key and normalized payload reuses its retained outcome; changed payload conflicts                                                | Network retries must resolve the original attempt rather than create another allocation                                                   |
+| Order completion latency  | For 100 stock and 10,000 unique opening-second attempts: admission-to-committed-order visibility p99 < 2 seconds, every order ≤ 10 seconds | Buyers need timely final confirmation; this measures successful order work separately from rejection traffic                              |
+| Admission acknowledgement | Return after the primary acknowledges Lua execution; do not wait for `WAITAOF`, `WAIT`, or worker completion                               | Keep disk/replica confirmation and database processing off the acknowledgement path; accept provisional reservation loss on Redis failure |
+| Final order durability    | `SUCCESS` requires a committed PostgreSQL row; no regression from success; recovery assumes intact persistent storage                      | Provisional admission and final purchase must have unambiguous, different guarantees                                                      |
+| Ordering                  | Redis execution order governs admission; no global HTTP-arrival FIFO guarantee                                                             | Multiple processes and network paths cannot share a reliable arrival clock                                                                |
+| Consistency               | Atomic stock/identity/work allocation in Redis; serialized per-sale final-order cap in PostgreSQL; status views may lag                    | Correctness decisions require coordination, while display freshness can tolerate delay                                                    |
+| Overload behavior         | Acquisition expiry before execution returns busy; possible-send failures remain uncertain; no stock release on timeout                     | Rejecting before admission and losing an acknowledgement require different retry behavior                                                 |
+| Dependency bounds         | Default 3-second pool acquisition, separate 3-second admission operation deadline, and 2-second DB acquisition/query timeout               | Bound individual waits and expose stalls; these deadlines are not HTTP response SLOs                                                      |
+| Horizontal operation      | API and worker replica counts can change independently against shared Redis and PostgreSQL                                                 | Request handling and order drain have different resource needs; this does not promise linear scaling                                      |
+| Recovery                  | Retain surviving reservations through worker/database failure and retry exhaustion; fence inconsistent accounting before reopening         | Infrastructure failure must not intentionally revoke stock ownership or create replenishment                                              |
+| Availability scope        | No percentage availability SLO; local persistent-storage recovery only; host/region redundancy and storage loss/corruption excluded        | A numerical uptime guarantee requires a redundancy and recovery scope beyond this design                                                  |
+| Validation                | Prove offered dispatch, outcome accounting, stock conservation, uniqueness, and latency independently                                      | A fast rejection path or invalid generator interval cannot establish successful-order capacity                                            |
 
 Admission acknowledgement intentionally favors latency over crash-safe reservation durability. A provisional acknowledgement may be lost before PostgreSQL commit. Final committed-order durability and provisional admission durability are separate contracts; the UI and recovery process must preserve that distinction.
 
@@ -118,67 +118,67 @@ Start with the opening-demand target and order-completion SLO, then estimate the
 
 Let `C` be buyers attempting purchase at opening, `T` the interval over which they submit, `U` distinct eligible identifiers reaching admission, and `S` initial stock. Use one initial attempt per buyer to calculate base traffic; duplicate clicks and retries add attempts without adding eligible buyers.
 
-| Metric | Calculation | Estimate / bound |
-| --- | --- | --- |
-| Initial opening demand | Planning range | 1,000–10,000 buyers attempting purchase |
-| Primary opening purchase rate | 10,000 attempts / 1 second | 10,000 offered requests/second |
-| Sufficient-stock case | 1,000 attempts / 1 second, 1,000 stock | 1,000 offered requests/second |
-| New allocations | `min(S, U)` | At most 10, 100 or 1,000 across the specified workloads |
-| Maximum allocation share, primary case | 100 units / 10,000 distinct attempts | 1% |
-| Maximum allocation share, sufficient-stock case | 1,000 units / 1,000 distinct attempts | 100% |
-| Duplicate workload | 100 attempts / 10 identifiers | Ten attempts per identifier; at most ten allocations |
-| Admission Lua evaluations | One per purchase attempt that reaches execution | Up to the executed purchase rate, including rejected/replayed attempts |
-| New stream entries | One per new allocation | At most `min(S, U)`; replay adds no new allocation |
+| Metric                                          | Calculation                                     | Estimate / bound                                                       |
+| ----------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------- |
+| Initial opening demand                          | Planning range                                  | 1,000–10,000 buyers attempting purchase                                |
+| Primary opening purchase rate                   | 10,000 attempts / 1 second                      | 10,000 offered requests/second                                         |
+| Sufficient-stock case                           | 1,000 attempts / 1 second, 1,000 stock          | 1,000 offered requests/second                                          |
+| New allocations                                 | `min(S, U)`                                     | At most 10, 100 or 1,000 across the specified workloads                |
+| Maximum allocation share, primary case          | 100 units / 10,000 distinct attempts            | 1%                                                                     |
+| Maximum allocation share, sufficient-stock case | 1,000 units / 1,000 distinct attempts           | 100%                                                                   |
+| Duplicate workload                              | 100 attempts / 10 identifiers                   | Ten attempts per identifier; at most ten allocations                   |
+| Admission Lua evaluations                       | One per purchase attempt that reaches execution | Up to the executed purchase rate, including rejected/replayed attempts |
+| New stream entries                              | One per new allocation                          | At most `min(S, U)`; replay adds no new allocation                     |
 
 The primary case can require roughly 10,000 admission decisions for only 100 new orders. Consequently API/Redis decision throughput and PostgreSQL successful-order throughput are separate sizing concerns. The sufficient-stock workload exercises final-order work that a mostly sold-out scenario cannot represent.
 
 ### Order-processing estimates
 
-| Metric | Calculation | Estimate / implication |
-| --- | --- | --- |
-| Primary-case final order volume | `min(100 stock, 10,000 eligible buyers)` | At most 100 new rows |
-| First-pass two-second completion budget | 100 orders / 2 seconds | Approximately 50 completions/second across the initial cohort |
-| First-pass ten-second completion budget | 100 orders / 10 seconds | Approximately 10 completions/second across the cohort |
-| Per-sale serial service budget for 50 completions/second | 1 second / 50 | Approximately 20 ms per completed order on average across the serialized path |
-| Sufficient-stock final order volume | `min(1,000 stock, 1,000 eligible buyers)` | At most 1,000 new rows; latency validation is diagnostic |
+| Metric                                                   | Calculation                               | Estimate / implication                                                        |
+| -------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------- |
+| Primary-case final order volume                          | `min(100 stock, 10,000 eligible buyers)`  | At most 100 new rows                                                          |
+| First-pass two-second completion budget                  | 100 orders / 2 seconds                    | Approximately 50 completions/second across the initial cohort                 |
+| First-pass ten-second completion budget                  | 100 orders / 10 seconds                   | Approximately 10 completions/second across the cohort                         |
+| Per-sale serial service budget for 50 completions/second | 1 second / 50                             | Approximately 20 ms per completed order on average across the serialized path |
+| Sufficient-stock final order volume                      | `min(1,000 stock, 1,000 eligible buyers)` | At most 1,000 new rows; latency validation is diagnostic                      |
 
 The two-second and ten-second rates are rough cohort-sizing calculations. The SLO clock starts at each admission, not at a common batch timestamp; average throughput alone cannot establish p99 or maximum latency. Worker validation, scheduling, Redis operations, database lock waits, transaction work, and commit visibility all consume the budget. The 20-ms figure is a derived budget, not a database-latency guarantee. The sufficient-stock validation should record latency without applying the spike latency gates.
 
 ### Polling estimates
 
-| Metric | Calculation | Estimate / implication |
-| --- | --- | --- |
-| Sale-status polling while open | `C / 5 seconds` | At 10,000 active pages, approximately 2,000 reads/second |
-| Sale-status polling after ended/sold out | `C / 30 seconds` | At 10,000 active pages, approximately 333 reads/second |
-| Pending order polling at maximum backoff | `P / 30 seconds`, where `P` is clients still polling | At 10,000 pending clients, approximately 333 lookups/second |
-| Order lookup persistence reads | One PostgreSQL-first lookup per request | Read demand follows polling clients, not just successful orders |
+| Metric                                   | Calculation                                          | Estimate / implication                                          |
+| ---------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
+| Sale-status polling while open           | `C / 5 seconds`                                      | At 10,000 active pages, approximately 2,000 reads/second        |
+| Sale-status polling after ended/sold out | `C / 30 seconds`                                     | At 10,000 active pages, approximately 333 reads/second          |
+| Pending order polling at maximum backoff | `P / 30 seconds`, where `P` is clients still polling | At 10,000 pending clients, approximately 333 lookups/second     |
+| Order lookup persistence reads           | One PostgreSQL-first lookup per request              | Read demand follows polling clients, not just successful orders |
 
 These rates assume evenly spread polling and ignore response duration. Clients first check orders after 300 ms, then back off from one second to 30 seconds and stop on success. Synchronized page loads can produce sharper read bursts, while early retries add transient traffic. The 10,000-page example assumes the primary buyer cohort keeps its pages open; it is an assumption for estimating read demand.
 
 ### Storage estimates
 
-| Data | Calculation | Cardinality / storage implication |
-| --- | --- | --- |
-| Sale metadata and inventory | One configuration/stock record per sale | Independent of buyer count |
-| Retained reservations | `S - remainingStock` | Up to 10, 100 or 1,000 across the specified workloads |
-| Identifier and allocated-request mappings | One entry in each map per reservation | Two association entries per allocation |
-| Stream entries | One per allocation, retained after ACK | Up to allocation count, plus storage needed for recovery metadata |
-| Rejection outcomes | One retained outcome per bound rejected key | Grows with distinct rejected attempts, not inventory alone |
-| Completed-order hints and retry/quarantine state | Per completed or processed allocation | Grows with admitted work and processing history |
-| PostgreSQL orders | One row per completed allocation | At most `S` per sale |
-| Persistent bytes | Entry/row counts × representation size, plus indexes and persistence overhead | Requires measurement; no bytes-per-record estimate is specified |
+| Data                                             | Calculation                                                                   | Cardinality / storage implication                                 |
+| ------------------------------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Sale metadata and inventory                      | One configuration/stock record per sale                                       | Independent of buyer count                                        |
+| Retained reservations                            | `S - remainingStock`                                                          | Up to 10, 100 or 1,000 across the specified workloads             |
+| Identifier and allocated-request mappings        | One entry in each map per reservation                                         | Two association entries per allocation                            |
+| Stream entries                                   | One per allocation, retained after ACK                                        | Up to allocation count, plus storage needed for recovery metadata |
+| Rejection outcomes                               | One retained outcome per bound rejected key                                   | Grows with distinct rejected attempts, not inventory alone        |
+| Completed-order hints and retry/quarantine state | Per completed or processed allocation                                         | Grows with admitted work and processing history                   |
+| PostgreSQL orders                                | One row per completed allocation                                              | At most `S` per sale                                              |
+| Persistent bytes                                 | Entry/row counts × representation size, plus indexes and persistence overhead | Requires measurement; no bytes-per-record estimate is specified   |
 
 No TTL or automatic stream trimming is defined. Repeated traffic and additional sales therefore grow retained state even after inventory sells out. Daily volume and retention duration are outside the defined workload. Validate representation overhead, AOF growth, database indexes, and restart cost before selecting production storage; the local 256-MB Redis limit is a resource budget, not a capacity guarantee.
 
 ### Connection and service sizing
 
-| Component | Calculation / constraint | Sizing implication |
-| --- | --- | --- |
-| PostgreSQL pools | Default `10 × (A + W)` for `A` APIs and `W` workers | Add operator/test connections to the aggregate pool ceiling |
-| Redis admission pools | Up to 100 leases per admission instance; separate command/consumer connections | Account for every process and auxiliary connection |
-| Single-sale admission authority | Lua executes serially on one primary | Adding API replicas does not divide one sale's atomic decisions among primaries |
-| Final order writer | Per-sale row lock serializes final transactions | More workers cannot bypass this serial correctness boundary |
-| Required in-flight work | Executed request rate × mean service time | Measure service time before choosing a replica count; tail latency still governs the SLO |
+| Component                       | Calculation / constraint                                                       | Sizing implication                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| PostgreSQL pools                | Default `10 × (A + W)` for `A` APIs and `W` workers                            | Add operator/test connections to the aggregate pool ceiling                              |
+| Redis admission pools           | Up to 100 leases per admission instance; separate command/consumer connections | Account for every process and auxiliary connection                                       |
+| Single-sale admission authority | Lua executes serially on one primary                                           | Adding API replicas does not divide one sale's atomic decisions among primaries          |
+| Final order writer              | Per-sale row lock serializes final transactions                                | More workers cannot bypass this serial correctness boundary                              |
+| Required in-flight work         | Executed request rate × mean service time                                      | Measure service time before choosing a replica count; tail latency still governs the SLO |
 
 There is no specified Redis execution time, disk IOPS requirement, or proven per-instance throughput. Select replica counts and cloud resources only after validating these service times and constraints against the derived load scenarios.
 
@@ -186,17 +186,16 @@ There is no specified Redis execution time, disk IOPS requirement, or proven per
 
 The estimates above give the opening burst roughly 10,000 purchase attempts for 100 units. The figures below are **illustrations derived from that demand**, not service benchmarks. Where a service time is needed, the assumption is stated so the failure threshold is visible.
 
-| Naive approach | Failure and limits |
-| --- | --- |
-| Read stock, then write a new value | With one unit left, just two overlapping requests can both read `1` and claim that unit. The availability check and ownership change are separate operations. |
-| Check identifier in each API's memory | In the duplicate workload, 100 attempts from ten identifiers produce ten attempts per identifier. Two API processes can each admit the same identifier because process-local state neither coordinates replicas nor survives restart. A shared lookup followed by a separate write has the same check-then-act race. |
-| Put every attempt behind one PostgreSQL sale-row lock | If each attempt holds the lock for an **assumed 2 ms**, 10,000 attempts require 20 seconds of serial lock occupancy. Ten database connections still contend for the same row. Rejected attempts queue ahead of the at-most-100 useful final orders. |
-| Reserve and enqueue in separate writes | One crash between the writes can strand one reserved unit without queued work. At 100 allocations, there are up to 100 such failure windows because ownership and publication lack a shared atomic boundary. |
-| Retry a timed-out purchase with a new key | A single lost response can follow a successful admission. A new key creates a second logical attempt; the timeout reveals nothing about whether the first one executed. |
-| ACK before the order commits | One worker crash after ACK and before commit can leave one reserved unit without ordinary pending delivery. The consumer group has already recorded the message as finished. |
-| Restore stock as `initial - completed orders` | If 100 units are reserved but only 40 orders have committed, this formula reports 60 units available although all 100 are owned. Completed orders lag reservation ownership. |
-| Treat the Redis replica as a synchronous durability barrier | One primary acknowledgement can arrive before local fsync or replica receipt. A crash in that interval can erase the acknowledged reservation; asynchronous replication does not make that acknowledgement crash-safe. |
-
+| Naive approach                                              | Failure and limits                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read stock, then write a new value                          | With one unit left, just two overlapping requests can both read `1` and claim that unit. The availability check and ownership change are separate operations.                                                                                                                                                        |
+| Check identifier in each API's memory                       | In the duplicate workload, 100 attempts from ten identifiers produce ten attempts per identifier. Two API processes can each admit the same identifier because process-local state neither coordinates replicas nor survives restart. A shared lookup followed by a separate write has the same check-then-act race. |
+| Put every attempt behind one PostgreSQL sale-row lock       | If each attempt holds the lock for an **assumed 2 ms**, 10,000 attempts require 20 seconds of serial lock occupancy. Ten database connections still contend for the same row. Rejected attempts queue ahead of the at-most-100 useful final orders.                                                                  |
+| Reserve and enqueue in separate writes                      | One crash between the writes can strand one reserved unit without queued work. At 100 allocations, there are up to 100 such failure windows because ownership and publication lack a shared atomic boundary.                                                                                                         |
+| Retry a timed-out purchase with a new key                   | A single lost response can follow a successful admission. A new key creates a second logical attempt; the timeout reveals nothing about whether the first one executed.                                                                                                                                              |
+| ACK before the order commits                                | One worker crash after ACK and before commit can leave one reserved unit without ordinary pending delivery. The consumer group has already recorded the message as finished.                                                                                                                                         |
+| Restore stock as `initial - completed orders`               | If 100 units are reserved but only 40 orders have committed, this formula reports 60 units available although all 100 are owned. Completed orders lag reservation ownership.                                                                                                                                         |
+| Treat the Redis replica as a synchronous durability barrier | One primary acknowledgement can arrive before local fsync or replica receipt. A crash in that interval can erase the acknowledged reservation; asynchronous replication does not make that acknowledgement crash-safe.                                                                                               |
 
 The 2-ms lock hold is a sizing example, not an assumed PostgreSQL guarantee. At 1 ms the same 10,000 attempts still require about 10 seconds of serial occupancy; at 5 ms they require about 50 seconds. This is why the architecture keeps the high-volume rejection path away from final order transactions.
 
@@ -229,31 +228,31 @@ The system has separate API, worker, and web responsibilities, with shared contr
 
 ### Public endpoints
 
-| Endpoint | Accepts | Returns in general |
-| --- | --- | --- |
-| `GET /api/sales/:saleId` | Sale ID | ID, start/end, observation time, status, remaining stock |
-| `POST /api/sales/:saleId/purchases` | JSON `identifier`, `idempotencyKey` | Provisional processing, uncertain confirmation, or explicit rejection |
-| `GET /api/sales/:saleId/order?identifier=...` | Sale ID and identifier | Available order state or dependency unavailability |
-| `GET /api/health/live` | No business input | Process liveness |
-| `GET /api/health/ready` | No business input | Dependency/configuration/reconciliation readiness |
-| `GET /api/metrics` | No business input | Process and dependency metrics for operators |
+| Endpoint                                      | Accepts                             | Returns in general                                                    |
+| --------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------- |
+| `GET /api/sales/:saleId`                      | Sale ID                             | ID, start/end, observation time, status, remaining stock              |
+| `POST /api/sales/:saleId/purchases`           | JSON `identifier`, `idempotencyKey` | Provisional processing, uncertain confirmation, or explicit rejection |
+| `GET /api/sales/:saleId/order?identifier=...` | Sale ID and identifier              | Available order state or dependency unavailability                    |
+| `GET /api/health/live`                        | No business input                   | Process liveness                                                      |
+| `GET /api/health/ready`                       | No business input                   | Dependency/configuration/reconciliation readiness                     |
+| `GET /api/metrics`                            | No business input                   | Process and dependency metrics for operators                          |
 
 Workers expose internal health/metrics endpoints on their own service port. Sale configuration and operator replay are CLIs, not public HTTP endpoints.
 
 ### Outcome meanings
 
-| Result | Meaning |
-| --- | --- |
-| HTTP 202 `PROCESSING/queued` | Redis primary acknowledged a reservation; PostgreSQL completion is pending |
-| HTTP 202 `PROCESSING/delayed` | Retained work needs retry/recovery or investigation |
-| HTTP 202 `NOT_ORDERED/confirmation_uncertain` | Placement is unconfirmed; execution may have happened |
-| Lookup `AVAILABLE` with `SUCCESS` and `orderId` | A committed PostgreSQL order exists |
-| Lookup `AVAILABLE` with plain `NOT_ORDERED` | Successful empty observation, not proof an older command cannot execute |
-| HTTP 409 `REJECTED` | Upcoming, ended, sold out, key conflict, or already placed; duplicate carries existing order state |
-| HTTP 429 `REJECTED/busy` | Pool acquisition expired before admission executed |
-| HTTP 400 / 413 / 414 | Invalid input / body too large / request target too large |
-| GET HTTP 404 | Unknown sale after metadata fallback |
-| HTTP 503 | Dependency/route failure; lookup/status use `UNAVAILABLE` |
+| Result                                          | Meaning                                                                                            |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| HTTP 202 `PROCESSING/queued`                    | Redis primary acknowledged a reservation; PostgreSQL completion is pending                         |
+| HTTP 202 `PROCESSING/delayed`                   | Retained work needs retry/recovery or investigation                                                |
+| HTTP 202 `NOT_ORDERED/confirmation_uncertain`   | Placement is unconfirmed; execution may have happened                                              |
+| Lookup `AVAILABLE` with `SUCCESS` and `orderId` | A committed PostgreSQL order exists                                                                |
+| Lookup `AVAILABLE` with plain `NOT_ORDERED`     | Successful empty observation, not proof an older command cannot execute                            |
+| HTTP 409 `REJECTED`                             | Upcoming, ended, sold out, key conflict, or already placed; duplicate carries existing order state |
+| HTTP 429 `REJECTED/busy`                        | Pool acquisition expired before admission executed                                                 |
+| HTTP 400 / 413 / 414                            | Invalid input / body too large / request target too large                                          |
+| GET HTTP 404                                    | Unknown sale after metadata fallback                                                               |
+| HTTP 503                                        | Dependency/route failure; lookup/status use `UNAVAILABLE`                                          |
 
 POST cannot distinguish an unknown sale from missing Redis configuration without querying PostgreSQL. Missing, corrupt, or fenced admission state therefore produces uncertainty rather than a definitive POST 404. Gateway errors may be HTML and are not application admission decisions.
 
@@ -267,10 +266,10 @@ Keys are scoped to a sale. A surviving bound key with a different normalized ide
 
 ### PostgreSQL models
 
-| Table | Fields and constraints |
-| --- | --- |
-| `flash_sale` | `id` primary key; `starts_at`, `ends_at`; nonnegative `initial_stock`; `created_at`, `updated_at`; end after start; normalized ID; trigger forbids update/delete |
-| `order` | UUID-valued text `id` primary key; `flash_sale_id` foreign key; normalized `user_identifier`; `admitted_at`, `completed_at`; completion at/after admission; unique `(flash_sale_id, user_identifier)` |
+| Table        | Fields and constraints                                                                                                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flash_sale` | `id` primary key; `starts_at`, `ends_at`; nonnegative `initial_stock`; `created_at`, `updated_at`; end after start; normalized ID; trigger forbids update/delete                                      |
+| `order`      | UUID-valued text `id` primary key; `flash_sale_id` foreign key; normalized `user_identifier`; `admitted_at`, `completed_at`; completion at/after admission; unique `(flash_sale_id, user_identifier)` |
 
 There is no order status column: a row represents a completed order. Pending state belongs to Redis. There is no user foreign key because identifiers are not accounts. Every row represents one unit, so no quantity column is needed.
 
@@ -318,17 +317,17 @@ Service recovery/manual remediation and intact surviving state are prerequisites
 
 ## 10. Technology selection
 
-| Technology | Role and selection rationale | Trade-off |
-| --- | --- | --- |
-| TypeScript and shared contracts | Common validation/state vocabulary across services and UI | Static types still require runtime validation |
-| Fastify | HTTP routing, JSON Schemas, hooks, health and metrics | Framework concurrency needs resource measurement |
-| React + Vite | Single page, countdown, purchase interaction and polling | Polling creates read load and requires stale-response handling |
-| Redis + Lua | Serialized stock/identity/window decisions near state | Single authority; script errors need fencing; memory/disk limits |
-| Redis Streams | Consumer-group delivery, pending discovery and reclaim | Queue and allocation share Redis's failure domain; retention grows |
-| PostgreSQL | Durable orders, constraints, replay and final stock cap | Per-sale final transaction serialization limits drain |
-| Nginx | Same-origin routing, static-web access and API replica balancing | Gateway timeouts can obscure a purchase outcome |
-| Docker Compose | Reproducible local services, limits and persistent volumes | Single-host deployment, no regional HA |
-| Vitest / Playwright / Node harness | Planned unit/service, browser and request-dispatch validation | Stub browser tests alone cannot prove backend correctness |
+| Technology                         | Role and selection rationale                                     | Trade-off                                                          |
+| ---------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| TypeScript and shared contracts    | Common validation/state vocabulary across services and UI        | Static types still require runtime validation                      |
+| Fastify                            | HTTP routing, JSON Schemas, hooks, health and metrics            | Framework concurrency needs resource measurement                   |
+| React + Vite                       | Single page, countdown, purchase interaction and polling         | Polling creates read load and requires stale-response handling     |
+| Redis + Lua                        | Serialized stock/identity/window decisions near state            | Single authority; script errors need fencing; memory/disk limits   |
+| Redis Streams                      | Consumer-group delivery, pending discovery and reclaim           | Queue and allocation share Redis's failure domain; retention grows |
+| PostgreSQL                         | Durable orders, constraints, replay and final stock cap          | Per-sale final transaction serialization limits drain              |
+| Nginx                              | Same-origin routing, static-web access and API replica balancing | Gateway timeouts can obscure a purchase outcome                    |
+| Docker Compose                     | Reproducible local services, limits and persistent volumes       | Single-host deployment, no regional HA                             |
+| Vitest / Playwright / Node harness | Planned unit/service, browser and request-dispatch validation    | Stub browser tests alone cannot prove backend correctness          |
 
 Use a burst generator that records actual request writes and a separate accounting pass that compares allocations, remaining stock, stream entries, and committed orders. Health probes alone cannot establish purchase capacity.
 
@@ -481,24 +480,24 @@ The following cases start from the opening-demand and order-latency targets. Ill
 
 ## 14. Component-level failure modeling
 
-| Component / boundary | Effect | Required handling and correctness boundary |
-| --- | --- | --- |
-| Browser refresh or lost response | Submission key may be lost, or execution outcome unknown | Identifier lookup; same-key retry while session survives; explicit uncertainty |
-| Proxy timeout/disconnect | Buyer cannot see a reliable application result | No automatic upstream retry; client reconciles; no stock release |
-| API crash before Lua | No allocation if command never executes | Retry may attempt admission under current rules |
-| API crash after Lua | Surviving reservation may lack a delivered response | Lookup/replay finds it; Redis loss can still erase it before DB commit |
-| Redis outage | Admission and queued-state validation unavailable | Fail closed/uncertain; workers retain work; restore existing volume |
-| Redis restart / old AOF state | Epoch stale; acknowledged provisional work may be missing | Fence/reconcile; retry lost uncommitted allocation; fence unmatched committed orders |
-| Redis replica failure | Background replica protection degraded | Primary remains authority; no automatic failover guarantee |
-| Redis memory/schema/partial mutation failure | Writes fail or allocation accounting becomes invalid | Prechecks, noeviction, fault latch; operator investigation |
-| PostgreSQL outage | Completion and order reads can fail | Retain/retry work; prepared POST path can still admit, though readiness fails |
-| Worker crash before commit | Message remains unfinished | Pending reclaim and bounded attempts; reservation retained |
-| DB commit reply lost | Commit may already exist | Matching replay returns existing UUID; uniqueness and timestamp checks |
-| Worker crash after commit before hint/ACK | Durable order with unfinished delivery | Lookup sees success; replay/repair completion then ACK |
-| Invalid message / conflicting identity | Unsafe work cannot finalize normally | Quarantine raw retained entry; investigate rather than release stock |
-| Final stock cap reached after admission loss | New reservation cannot become another order | Quarantine plus admission fault fence |
-| Retry exhaustion | Automatic progress stops | Preserve reservation, entry and metadata; eligible operator replay |
-| Persistent storage loss/corruption | Required recovery evidence may be unavailable | Outside promised recovery scope; no zero-loss claim |
+| Component / boundary                         | Effect                                                    | Required handling and correctness boundary                                           |
+| -------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Browser refresh or lost response             | Submission key may be lost, or execution outcome unknown  | Identifier lookup; same-key retry while session survives; explicit uncertainty       |
+| Proxy timeout/disconnect                     | Buyer cannot see a reliable application result            | No automatic upstream retry; client reconciles; no stock release                     |
+| API crash before Lua                         | No allocation if command never executes                   | Retry may attempt admission under current rules                                      |
+| API crash after Lua                          | Surviving reservation may lack a delivered response       | Lookup/replay finds it; Redis loss can still erase it before DB commit               |
+| Redis outage                                 | Admission and queued-state validation unavailable         | Fail closed/uncertain; workers retain work; restore existing volume                  |
+| Redis restart / old AOF state                | Epoch stale; acknowledged provisional work may be missing | Fence/reconcile; retry lost uncommitted allocation; fence unmatched committed orders |
+| Redis replica failure                        | Background replica protection degraded                    | Primary remains authority; no automatic failover guarantee                           |
+| Redis memory/schema/partial mutation failure | Writes fail or allocation accounting becomes invalid      | Prechecks, noeviction, fault latch; operator investigation                           |
+| PostgreSQL outage                            | Completion and order reads can fail                       | Retain/retry work; prepared POST path can still admit, though readiness fails        |
+| Worker crash before commit                   | Message remains unfinished                                | Pending reclaim and bounded attempts; reservation retained                           |
+| DB commit reply lost                         | Commit may already exist                                  | Matching replay returns existing UUID; uniqueness and timestamp checks               |
+| Worker crash after commit before hint/ACK    | Durable order with unfinished delivery                    | Lookup sees success; replay/repair completion then ACK                               |
+| Invalid message / conflicting identity       | Unsafe work cannot finalize normally                      | Quarantine raw retained entry; investigate rather than release stock                 |
+| Final stock cap reached after admission loss | New reservation cannot become another order               | Quarantine plus admission fault fence                                                |
+| Retry exhaustion                             | Automatic progress stops                                  | Preserve reservation, entry and metadata; eligible operator replay                   |
+| Persistent storage loss/corruption           | Required recovery evidence may be unavailable             | Outside promised recovery scope; no zero-loss claim                                  |
 
 Readiness checks can withdraw unhealthy services operationally, but the purchase handler itself does not synchronously run those probes. A PostgreSQL outage alone therefore does not prevent a prepared API from executing Lua. An existing committed order remains readable without Redis if PostgreSQL is reachable.
 
@@ -510,26 +509,26 @@ The initial topology is a single-host container deployment with a proxy, static 
 
 ### Before opening the sale
 
-| Preparation | Required check | Why it matters |
-| --- | --- | --- |
-| Fix the sale definition | Sale ID, inclusive start, exclusive end, and initial stock are immutable; repeat configuration only with identical values | Prevents accidental replenishment or mid-sale rule changes |
-| Prepare durable stores | PostgreSQL schema and storage are ready; Redis primary has AOF everysec, noeviction, retained volumes, and the expected replica connection | Recovery and final-order constraints depend on these settings |
-| Initialize admission | Sale metadata and stock are preloaded into Redis; current epoch, key types, and accounting pass readiness | Purchases must never create stock opportunistically at opening |
-| Size and rehearse traffic | Rehearse the required 10k/1s, 100-stock burst with actual dispatch timestamps, zero proxy/transport errors, full allocation and the intended resource limits | Offered load and accepted work are different quantities |
-| Verify failure paths | Exercise API/worker/Redis/PostgreSQL restarts, lost replies, exhausted retries, and committed-order reconciliation | An opening burst can overlap a partial failure |
-| Prepare observation | Collect each replica's metrics, proxy errors, stream backlog, pending/delayed work, DB pool state, Redis persistence state, and resource use | Fleet averages can hide one saturated component |
-| Set operational ownership | Identify who can pause admission, inspect quarantined work, reconcile state, and rearm eligible retries | Fenced state requires a deliberate human decision |
+| Preparation               | Required check                                                                                                                                               | Why it matters                                                 |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Fix the sale definition   | Sale ID, inclusive start, exclusive end, and initial stock are immutable; repeat configuration only with identical values                                    | Prevents accidental replenishment or mid-sale rule changes     |
+| Prepare durable stores    | PostgreSQL schema and storage are ready; Redis primary has AOF everysec, noeviction, retained volumes, and the expected replica connection                   | Recovery and final-order constraints depend on these settings  |
+| Initialize admission      | Sale metadata and stock are preloaded into Redis; current epoch, key types, and accounting pass readiness                                                    | Purchases must never create stock opportunistically at opening |
+| Size and rehearse traffic | Rehearse the required 10k/1s, 100-stock burst with actual dispatch timestamps, zero proxy/transport errors, full allocation and the intended resource limits | Offered load and accepted work are different quantities        |
+| Verify failure paths      | Exercise API/worker/Redis/PostgreSQL restarts, lost replies, exhausted retries, and committed-order reconciliation                                           | An opening burst can overlap a partial failure                 |
+| Prepare observation       | Collect each replica's metrics, proxy errors, stream backlog, pending/delayed work, DB pool state, Redis persistence state, and resource use                 | Fleet averages can hide one saturated component                |
+| Set operational ownership | Identify who can pause admission, inspect quarantined work, reconcile state, and rearm eligible retries                                                      | Fenced state requires a deliberate human decision              |
 
 ### During the sale
 
-| Signal | Operational response |
-| --- | --- |
-| Rising proxy timeouts or purchase uncertainty | Separate upstream connection failures from Redis/DB latency; do not count ambiguous responses as rejected buyers |
-| Redis pool acquisition expiry | Return busy before execution; measure executed admissions and stock conservation while sizing API capacity |
-| Growing stream backlog or order p99 | Inspect worker attempts, PostgreSQL pool wait, transaction lock time, and commit visibility; scale workers only if the per-sale lock is not the limit |
-| Redis epoch change, invalid key state, or admission fault | Keep admission fenced; reconcile durable orders and all retained reservations before reopening |
-| PostgreSQL unavailable | Surviving Redis reservations remain owned and retryable; order lookup may be unavailable while finalization is delayed |
-| Retry exhaustion or quarantine | Preserve message, reservation, and diagnostics; investigate before operator replay |
+| Signal                                                    | Operational response                                                                                                                                  |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rising proxy timeouts or purchase uncertainty             | Separate upstream connection failures from Redis/DB latency; do not count ambiguous responses as rejected buyers                                      |
+| Redis pool acquisition expiry                             | Return busy before execution; measure executed admissions and stock conservation while sizing API capacity                                            |
+| Growing stream backlog or order p99                       | Inspect worker attempts, PostgreSQL pool wait, transaction lock time, and commit visibility; scale workers only if the per-sale lock is not the limit |
+| Redis epoch change, invalid key state, or admission fault | Keep admission fenced; reconcile durable orders and all retained reservations before reopening                                                        |
+| PostgreSQL unavailable                                    | Surviving Redis reservations remain owned and retryable; order lookup may be unavailable while finalization is delayed                                |
+| Retry exhaustion or quarantine                            | Preserve message, reservation, and diagnostics; investigate before operator replay                                                                    |
 
 Stop or withdraw new admission when Redis accounting is inconsistent. Do not restore stock from completed-order count, delete volumes, clear a fault latch blindly, or infer rejection from a missing HTTP response. A committed PostgreSQL order remains the final success source.
 
@@ -553,43 +552,43 @@ Validation answers two separate questions: whether inventory and identity remain
 
 ### Load and order-completion scenarios
 
-| Workload | Offered traffic and stock | Required result |
-| --- | --- | --- |
-| `no-oversell` | 100 unique attempts; 10 units; synchronized release within 1 second | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work |
-| `duplicates` | 100 attempts from ten identifiers; ten units; synchronized release within 1 second | Valid dispatch and at most one allocation/order per identifier; distinct keys exercise duplicate rejection |
-| `sufficient-stock` | 1,000 unique attempts; 1,000 units; 1 second | Valid dispatch and accounting invariants; report allocation and order latency without a full-allocation or spike latency gate |
-| `normal-burst` | 5,000 unique attempts; 100 units; 10 seconds | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work |
-| `aggressive-burst` | 5,000 unique attempts; 100 units; 3 seconds | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work |
-| `extreme-burst` | 5,000 unique attempts; 100 units; 1 second | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work |
-| `spike-10k` | 10,000 unique attempts; 100 units; 1 second | All writes before 1 second; zero proxy/transport errors; all 100 orders committed; zero oversell/duplicate; order visibility p99 < 2 seconds and every order ≤ 10 seconds |
+| Workload           | Offered traffic and stock                                                          | Required result                                                                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no-oversell`      | 100 unique attempts; 10 units; synchronized release within 1 second                | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work                                                                                 |
+| `duplicates`       | 100 attempts from ten identifiers; ten units; synchronized release within 1 second | Valid dispatch and at most one allocation/order per identifier; distinct keys exercise duplicate rejection                                                                |
+| `sufficient-stock` | 1,000 unique attempts; 1,000 units; 1 second                                       | Valid dispatch and accounting invariants; report allocation and order latency without a full-allocation or spike latency gate                                             |
+| `normal-burst`     | 5,000 unique attempts; 100 units; 10 seconds                                       | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work                                                                                 |
+| `aggressive-burst` | 5,000 unique attempts; 100 units; 3 seconds                                        | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work                                                                                 |
+| `extreme-burst`    | 5,000 unique attempts; 100 units; 1 second                                         | Valid dispatch, stock conservation, unique allocations/orders and completed admitted work                                                                                 |
+| `spike-10k`        | 10,000 unique attempts; 100 units; 1 second                                        | All writes before 1 second; zero proxy/transport errors; all 100 orders committed; zero oversell/duplicate; order visibility p99 < 2 seconds and every order ≤ 10 seconds |
 
 A one-second burst is valid only if the generator records that every offered request was **written within one second**. Scheduled start times are insufficient. Responses and queue drain may finish later. Report completed HTTP latency separately from admitted-order completion latency; non-JSON gateway responses and transport failures have no application outcome and must remain visible in accounting.
 
 ### Sale-window and idempotency cases
 
-| Case | Required assertion |
-| --- | --- |
-| Immediately before `starts_at` | New admission rejected as upcoming |
-| Exactly at `starts_at` | New admission eligible if stock and identity permit |
-| Immediately before `ends_at` | New admission still eligible |
-| Exactly at or after `ends_at` | New admission rejected as ended; matching earlier-key replay and worker completion may continue |
-| Same key and normalized identifier | Retained allocation or rejection is replayed without another stock decrement |
-| Same key with changed normalized identifier | Idempotency conflict, no new allocation |
-| New key with already allocated identifier | Explicit already-placed feedback and existing order state |
-| Invalid/oversized input | Rejected before Redis mutation |
+| Case                                        | Required assertion                                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Immediately before `starts_at`              | New admission rejected as upcoming                                                              |
+| Exactly at `starts_at`                      | New admission eligible if stock and identity permit                                             |
+| Immediately before `ends_at`                | New admission still eligible                                                                    |
+| Exactly at or after `ends_at`               | New admission rejected as ended; matching earlier-key replay and worker completion may continue |
+| Same key and normalized identifier          | Retained allocation or rejection is replayed without another stock decrement                    |
+| Same key with changed normalized identifier | Idempotency conflict, no new allocation                                                         |
+| New key with already allocated identifier   | Explicit already-placed feedback and existing order state                                       |
+| Invalid/oversized input                     | Rejected before Redis mutation                                                                  |
 
 ### Failure and recovery cases
 
-| Injection point | Required assertion |
-| --- | --- |
-| API stops before sending Lua | No allocation from that request; retry follows current sale rules |
-| API reply disappears after Lua | Client remains uncertain and reuses the same key; surviving allocation is discoverable |
-| Redis restarts before a provisional reservation persists | Missing uncommitted allocation may be retried; any committed order remains final; no excess final orders |
-| Worker stops before commit | Reservation and stream entry remain recoverable |
-| Database commit succeeds but reply or worker ACK is lost | Replay finds the matching order; one order row, no second allocation |
-| PostgreSQL becomes unavailable | Surviving work is retained and retried; admission readiness reflects the dependency state |
-| Retry budget is exhausted | Reservation and raw entry remain; eligible operator replay restores progress without replenishing stock |
-| Redis associations, stream identity, or final cap disagree | Quarantine/fence; no new admission until complete reconciliation |
+| Injection point                                            | Required assertion                                                                                       |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| API stops before sending Lua                               | No allocation from that request; retry follows current sale rules                                        |
+| API reply disappears after Lua                             | Client remains uncertain and reuses the same key; surviving allocation is discoverable                   |
+| Redis restarts before a provisional reservation persists   | Missing uncommitted allocation may be retried; any committed order remains final; no excess final orders |
+| Worker stops before commit                                 | Reservation and stream entry remain recoverable                                                          |
+| Database commit succeeds but reply or worker ACK is lost   | Replay finds the matching order; one order row, no second allocation                                     |
+| PostgreSQL becomes unavailable                             | Surviving work is retained and retried; admission readiness reflects the dependency state                |
+| Retry budget is exhausted                                  | Reservation and raw entry remain; eligible operator replay restores progress without replenishing stock  |
+| Redis associations, stream identity, or final cap disagree | Quarantine/fence; no new admission until complete reconciliation                                         |
 
 Use real Redis and PostgreSQL for atomicity, restart, and final-ledger checks. Browser scenarios verify the visible distinction between `PROCESSING`, `SUCCESS`, definitive rejection, and `NOT_ORDERED/confirmation_uncertain`; they must also cover double-clicks, refresh, stale responses, and same-key retry. Unit tests should cover normalization, schemas, state reconciliation, and bounded retry behavior. Static checks and a production build should confirm that the proposed contracts compile together.
 
@@ -603,10 +602,10 @@ The capacity acceptance decision requires the 100-unit/10,000-buyer burst to hav
 
 The proposed design serves one implicit product through one sale's Redis admission authority and a short asynchronous path to a durable order. Its boundary is clearest when demand, product scope, or checkout behavior changes. The figures below are **planning scenarios**, not claims that a particular component fails at an exact request rate. Each evolution requires a new requirement and a measurement showing the present design cannot meet it.
 
-| Growth scenario | Opening attempts in one second | Implication if every attempt reaches the dynamic path |
-| --- | ---: | --- |
-| Primary planning case | 10,000 | Size API, Redis admission, and the 100-order completion path against this demand |
-| Higher demand, if required later | To be specified | Remeasure ingress, admission and order processing before extending the target |
+| Growth scenario                  | Opening attempts in one second | Implication if every attempt reaches the dynamic path                            |
+| -------------------------------- | -----------------------------: | -------------------------------------------------------------------------------- |
+| Primary planning case            |                         10,000 | Size API, Redis admission, and the 100-order completion path against this demand |
+| Higher demand, if required later |                To be specified | Remeasure ingress, admission and order processing before extending the target    |
 
 Future demand changes require a new explicit target and fresh measurements; they are outside current acceptance.
 

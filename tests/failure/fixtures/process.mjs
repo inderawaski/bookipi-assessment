@@ -1,13 +1,21 @@
 // Only launched by the isolated failure runner; there is no HTTP fault surface.
 import { createDatabase } from '../../../packages/database/dist/index.js';
-import { RedisAdmission, createRedisConnection } from '../../../packages/redis/dist/index.js';
+import {
+  RedisAdmission,
+  createRedisConnection,
+} from '../../../packages/redis/dist/index.js';
 import { processOrder } from '../../../apps/worker/dist/orders/consumer.js';
 const { boundary, saleId, entry, mode } = JSON.parse(process.argv[2]);
-const failpoint = async name => {
+const failpoint = async (name) => {
   process.send({ boundary: name });
   if (name === boundary) await new Promise(() => {});
 };
-const gate = new RedisAdmission(process.env.TEST_REDIS_URL, 16, 30000, mode === 'admission' ? failpoint : undefined);
+const gate = new RedisAdmission(
+  process.env.TEST_REDIS_URL,
+  16,
+  30000,
+  mode === 'admission' ? failpoint : undefined,
+);
 if (mode === 'admission') {
   await gate.place(saleId, { identifier: 'person', idempotencyKey: 'key' });
 } else {

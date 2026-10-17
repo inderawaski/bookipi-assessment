@@ -14,15 +14,11 @@
 - Avoid speculative abstractions and unrelated refactoring.
 - See `.agents/references/architecture-principles.md` and the installed `project-structure` skill.
 
-
-
 ## Request Modes
 
 - **Discussion:** Answer and inspect as needed; do not edit code unless asked.
 - **Implement issue:** Read the issue and linked context; inspect the repository; implement the agreed behavior; verify.
 - **Direct change:** Proceed on small, clear tasks. Ask focused questions or suggest specification discovery if behavior or scope is materially unclear.
-
-
 
 ## Decision Boundaries
 
@@ -31,8 +27,6 @@
 - If the approved spec conflicts with the codebase or constraints, surface the conflict; don't silently rewrite requirements.
 - Do not perform destructive actions, deploy, publish, or change external tickets without explicit authorization.
 
-
-
 ## Quality and Completion
 
 - Use available skills for architecture, debugging, testing, verification, and review when the task calls for them; availability does not mean every skill must be invoked on every change.
@@ -40,4 +34,3 @@
 - Run relevant tests, lint, type checks, and build commands where available; do not claim unrun checks passed.
 - Use the code-review skill when a review is requested or a change is consequential, broad, or security-sensitive. Tiny changes need a proportionate self-check, not a separate review stage or reviewer agent.
 - Report changed behavior, checks run, limitations, and unresolved issues.
-

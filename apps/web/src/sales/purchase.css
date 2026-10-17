@@ -1,28 +1,141 @@
-:root { font-family: system-ui, sans-serif; color: #192d29; background: #f4f3ee; font-synthesis: none; --muted: #4f625c; --accent: #174f40; --border: #bdc9c0; }
-* { box-sizing: border-box; }
-body { margin: 0; }
-main { max-width: 72rem; margin: auto; padding: 3rem 2rem; }
-header { border-bottom: 1px solid var(--border); padding-bottom: 2rem; margin-bottom: 2rem; }
-h1 { font-size: clamp(2.5rem, 6vw, 4rem); letter-spacing: -.04em; margin: .5rem 0; }
-h2 { font-size: 1.75rem; line-height: 1.2; }
-h3 { font-size: 1rem; }
-p { line-height: 1.6; }
-.eyebrow { font-size: .75rem; letter-spacing: .12em; font-weight: 700; }
-.sale-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; }
-.product-mark { background: #d9e4d8; color: var(--accent); padding: 2rem; font: 6rem Georgia, serif; border-left: .75rem solid var(--accent); }
-.purchase { background: #fff; border: 1px solid var(--border); padding: 2rem; }
-.purchase h2 { margin-top: 0; }
-.sale-status { border-block: 1px solid var(--border); padding: 1rem 0; }
-.sale-status p { margin: .25rem 0; }
-.countdown { font-variant-numeric: tabular-nums; }
-label { display: block; font-weight: 650; margin: 1.5rem 0 .5rem; }
-input, button { width: 100%; min-height: 3rem; font: inherit; border-radius: .25rem; }
-input { padding: .75rem; border: 1px solid var(--muted); }
-button { padding: .75rem 1rem; border: 1px solid var(--accent); background: var(--accent); color: white; font-weight: 650; cursor: pointer; }
-button:disabled { background: #e0e5e1; border-color: var(--border); color: #4a5a53; cursor: default; }
-:focus-visible { outline: 3px solid #9c5a15; outline-offset: 3px; }
-.muted { color: var(--muted); font-size: .875rem; }
-.validation { color: #8e2f18; font-size: .875rem; }
-.order-status { overflow-wrap: anywhere; }
-.order-id { font-family: monospace; }
-@media (max-width: 48rem) { main { padding: 1.5rem 1rem; } .sale-layout { grid-template-columns: 1fr; gap: 1.5rem; } .purchase { padding: 1.25rem; } .product-mark { font-size: 4rem; padding: 1rem; } }
+:root {
+  font-family: system-ui, sans-serif;
+  color: #192d29;
+  background: #f4f3ee;
+  font-synthesis: none;
+  --muted: #4f625c;
+  --accent: #174f40;
+  --border: #bdc9c0;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 72rem;
+  margin: auto;
+  padding: 3rem 2rem;
+}
+header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2rem;
+  margin-bottom: 2rem;
+}
+h1 {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  letter-spacing: -0.04em;
+  margin: 0.5rem 0;
+}
+h2 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+h3 {
+  font-size: 1rem;
+}
+p {
+  line-height: 1.6;
+}
+.eyebrow {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+.sale-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+}
+.product-mark {
+  background: #d9e4d8;
+  color: var(--accent);
+  padding: 2rem;
+  font:
+    6rem Georgia,
+    serif;
+  border-left: 0.75rem solid var(--accent);
+}
+.purchase {
+  background: #fff;
+  border: 1px solid var(--border);
+  padding: 2rem;
+}
+.purchase h2 {
+  margin-top: 0;
+}
+.sale-status {
+  border-block: 1px solid var(--border);
+  padding: 1rem 0;
+}
+.sale-status p {
+  margin: 0.25rem 0;
+}
+.countdown {
+  font-variant-numeric: tabular-nums;
+}
+label {
+  display: block;
+  font-weight: 650;
+  margin: 1.5rem 0 0.5rem;
+}
+input,
+button {
+  width: 100%;
+  min-height: 3rem;
+  font: inherit;
+  border-radius: 0.25rem;
+}
+input {
+  padding: 0.75rem;
+  border: 1px solid var(--muted);
+}
+button {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  font-weight: 650;
+  cursor: pointer;
+}
+button:disabled {
+  background: #e0e5e1;
+  border-color: var(--border);
+  color: #4a5a53;
+  cursor: default;
+}
+:focus-visible {
+  outline: 3px solid #9c5a15;
+  outline-offset: 3px;
+}
+.muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.validation {
+  color: #8e2f18;
+  font-size: 0.875rem;
+}
+.order-status {
+  overflow-wrap: anywhere;
+}
+.order-id {
+  font-family: monospace;
+}
+@media (max-width: 48rem) {
+  main {
+    padding: 1.5rem 1rem;
+  }
+  .sale-layout {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .purchase {
+    padding: 1.25rem;
+  }
+  .product-mark {
+    font-size: 4rem;
+    padding: 1rem;
+  }
+}

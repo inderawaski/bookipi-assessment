@@ -15,15 +15,28 @@ export function useSale() {
         const response = await getSale();
         if (stopped) return;
         if ('saleId' in response) {
-          setSale(response); setError('');
-          if (response.status === 'ENDED' || response.status === 'SOLD_OUT') delay = 30000;
-        } else setError(response.status === 'REJECTED' ? 'Sale not found. Check the sale link.' : 'Sale status unavailable. Reconnecting…');
-      } catch { if (!stopped) setError('Sale status unavailable. Reconnecting…'); }
+          setSale(response);
+          setError('');
+          if (response.status === 'ENDED' || response.status === 'SOLD_OUT')
+            delay = 30000;
+        } else
+          setError(
+            response.status === 'REJECTED'
+              ? 'Sale not found. Check the sale link.'
+              : 'Sale status unavailable. Reconnecting…',
+          );
+      } catch {
+        if (!stopped) setError('Sale status unavailable. Reconnecting…');
+      }
       if (!stopped) timer = setTimeout(() => void refresh(), delay);
     }
     void refresh();
     const clock = setInterval(() => setNow(Date.now()), 1000);
-    return () => { stopped = true; clearTimeout(timer); clearInterval(clock); };
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      clearInterval(clock);
+    };
   }, []);
   return { sale, error, now };
 }

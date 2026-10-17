@@ -6,7 +6,15 @@ it('refuses injected failpoints in production before accessing dependencies', as
   vi.stubEnv('NODE_ENV', 'production');
   try {
     const hook = vi.fn(async () => {});
-    await expect(persistOrder({} as Pool, { saleId: 'sale', identifier: 'person', admittedAtMs: 1 }, hook)).rejects.toThrow('test mode');
+    await expect(
+      persistOrder(
+        {} as Pool,
+        { saleId: 'sale', identifier: 'person', admittedAtMs: 1 },
+        hook,
+      ),
+    ).rejects.toThrow('test mode');
     expect(hook).not.toHaveBeenCalled();
-  } finally { vi.unstubAllEnvs(); }
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
