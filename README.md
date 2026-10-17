@@ -1,33 +1,30 @@
-# High-throughput flash sale assessment
+# Flash Sale
 
-A single-product flash sale demonstration using TypeScript, Fastify, React, Redis Streams and PostgreSQL. Redis performs atomic admission and stock reservation; workers finalize orders asynchronously. The interface actively retrieves sale and order status.
+## System Design
 
-## Behavior
-
-Enter a nonempty user identifier and select Buy Now during the sale. Identifiers are trimmed and lowercased; they are not authenticated accounts. Each identifier may secure one unit per sale.
-
-Requests are admitted in authoritative Redis execution order. Stock is reserved at admission, separating allocation from slow processing. The sale window is start-inclusive/end-exclusive and governs admission, not completion. The purchase API calls only Redis; configuration is preloaded and Lua checks the sale window, stock, duplicates and safety fences. Sale-status/order endpoints and readiness read sale metadata from Redis, loading PostgreSQL only on a metadata miss. Order confirmation and reconciliation still use PostgreSQL outside purchase admission. The API returns PROCESSING immediately after the Redis primary acknowledges the reservation. It does not wait for disk or replica persistence. Redis crashes/failover can lose an acknowledged reservation; the page reports a missing reservation and permits retry. Worker/database failures retain surviving reservations for retry.
-
-The page reports upcoming, active, ended and sold out; explicit duplicate feedback; and processing/success. Accidental duplicate submissions reuse one in-memory request key. Refresh uses identifier-based lookup. There is no payment, authentication, catalogue, quantity selector or admin interface.
-
-## Architecture and trade-offs
-
-See [architecture](<docs/architecture.md>) for the system diagram and complete flow, [decisions](<docs/decisions.md>) for rationale, [recovery](<docs/recovery.md>) for failure handling, and [testing](<docs/testing.md>) for test strategy and results.
-
-Redis uses AOF everysec and one asynchronous read-only replica. No WAITAOF or WAIT is used by the application; this explicitly trades crash-safe admission acknowledgements for lower latency. The replica has its own volume but provides no automatic failover or zero-loss guarantee. API and worker instances scale independently; Redis remains the single-sale admission limit. PostgreSQL uses an order uniqueness constraint for safe replay and a per-sale transaction lock/final stock cap to prevent excess committed orders after Redis admission loss. PostgreSQL commits remain durable; pre-commit Redis acknowledgements can be lost. Reconciliation fences inconsistent state rather than guessing stock. Host/regional redundancy is excluded.
-
-## Prerequisites
-
-Validated environment: macOS arm64 (Darwin 25.5.0), Apple M4 Pro / 24 GiB, Docker Desktop 4.88.1, Engine 29.7.2, Compose 5.4.0; Docker VM 12 CPUs / 7.748 GiB. This is measured host configuration, not a minimum resource guarantee. Linux containers are required; other hosts need their own verification. Images pin Node 22.23.2, PostgreSQL 18.3, Redis 7.4.8 and Nginx 1.28.2. Install local Node 22.23.2 and pnpm 11.25.0 for operator scripts/tests. Git and a running Docker daemon are required. Free localhost ports 8080, 5432 and 6379; browser tests additionally use 4173.
-
-## Build and run
-
-Source repository: [inderawaski/bookipi-assessment](https://github.com/inderawaski/bookipi-assessment). Clone it and run the remaining commands from its root:
-
-```sh
-git clone https://github.com/inderawaski/bookipi-assessment.git
-cd bookipi-assessment
+```mermaid
+flowchart LR
+    Frontend[React frontend] --> API[Fastify API]
+    API --> Redis[Redis]
+    Redis --> Worker[Order workers]
+    Worker --> DB[(PostgreSQL)]
 ```
+
+The system uses TypeScript, Fastify, React + Vite, Redis and PostgreSQL. Redis Lua atomically checks the sale window, prevents duplicate allocations and reserves stock in Redis execution order. It also enqueues accepted purchases in Redis Streams. Workers process reservations asynchronously and commit orders to PostgreSQL, keeping database writes off the purchase admission path. API and worker replicas can scale independently; PostgreSQL uniqueness constraints and a per-sale final stock cap protect committed orders from duplicates and overselling.
+
+Admission returns after the Redis primary acknowledges execution, favoring low latency over crash-safe reservation durability. AOF every second and asynchronous replication can lose acknowledged reservations on Redis failure; only a committed PostgreSQL order represents final success. Surviving reservations can be retried after worker or database failures. Redis remains the single-sale admission bottleneck, status polling can lag, and the local deployment does not provide automatic failover or host/region redundancy.
+
+### Comprehensive System Design
+
+> **[Read the complete system design →](docs/system-design.md)**
+>
+> Explore the full architecture, request flows, design decisions and recovery behavior.
+
+## Build & Run
+
+Run commands from the repository root. Install Node.js 22.23.2 and pnpm 11.25.0, and start Docker with Compose support and Linux containers. Keep local ports 8080, 5432 and 6379 available; browser tests also use 4173.
+
+Install dependencies, build all packages and applications, start infrastructure, and apply migrations:
 
 ```sh
 cp .env.example .env
@@ -37,51 +34,70 @@ docker compose up -d --wait postgres redis redis-replica
 pnpm db:migrate
 ```
 
-Configure before opening. Generate UTC times five minutes ahead and a one-hour window, so the example remains usable on any date:
+Configure a sale before it opens. This example starts in five minutes and lasts one hour:
 
 ```sh
 SALE_START=$(node -p 'new Date(Date.now()+300000).toISOString()')
 SALE_END=$(node -p 'new Date(Date.now()+3900000).toISOString()')
 pnpm sale:configure flash-sale "$SALE_START" "$SALE_END" 100
+```
+
+Start the API server, order workers, frontend and proxy:
+
+```sh
 docker compose up --build -d --wait
 ```
 
-The configuration CLI accepts exactly `ID START_ISO END_ISO STOCK`; retain those values for an identical retry. Existing sales cannot have their times or initial stock changed. Do not regenerate times and reuse an existing ID. Use a new ID for a new sale and open `/?sale=that-id`. If setup misses opening before Redis initialization, do not bypass the safety check.
+Open [the frontend](http://localhost:8080/?sale=flash-sale). The API is available through the same origin under `/api`; readiness is at [`/api/health/ready`](http://localhost:8080/api/health/ready). Enter a nonempty buyer identifier to purchase; each normalized identifier can receive one unit per sale.
 
-Open [the purchase page](http://localhost:8080/?sale=flash-sale). Same-origin endpoints: `GET /api/sales/flash-sale`, `POST /api/sales/flash-sale/purchases`, `GET /api/sales/flash-sale/order?identifier=buyer`, `GET /api/health/live`, `GET /api/health/ready`, `GET /api/metrics`. See [request examples and limits](docs/public-contract.md).
+The configuration command accepts `ID START_ISO END_ISO STOCK`. Existing sale times and initial stock cannot be changed. Use a new ID for another sale and open `/?sale=that-id`; an identical configuration can be retried safely.
+
+Inspect or stop the running services:
 
 ```sh
-docker compose up -d --scale api=2 --scale worker=2
 docker compose ps
 docker compose logs --tail=100 api worker
 docker compose stop
-docker compose start
 ```
 
-The proxy resolves API replicas; API/worker ports are internal. Worker health can be checked with `docker compose exec worker node -e "fetch('http://127.0.0.1:3001/health/ready').then(async r=>console.log(r.status,await r.text()))"`. `docker compose down` also preserves named volumes; recreate with `docker compose up -d`. Never add `--volumes` to a demo shutdown. The environment example contains local-only credentials and binds infrastructure to loopback.
+Use `docker compose start` to resume stopped services. Named volumes retain sale and order data.
 
-Configuration is idempotent and cannot replenish inventory on restart. Times and initial stock cannot be changed after admission initialization. Resetting disposable test data is a separate explicitly destructive operation and must not target demonstration volumes.
+Run static checks and tests:
 
-## Tests
+```sh
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:integration
+pnpm exec playwright install chromium
+pnpm test:browser
+pnpm test:failure
+```
 
-See [testing commands, coverage and evidence](docs/testing.md). Run `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test`, `pnpm test:integration`, `pnpm exec playwright install chromium`, `pnpm test:browser`, `pnpm test:failure` and `pnpm test:stress no-oversell`. Service/stress runners create random isolated projects. Integration/stress cleanup deletes only their disposable volumes; failure runs retain their own volumes. Browser tests use stub HTTP and start Vite automatically.
+`pnpm test` runs unit and harness tests. Integration and failure tests start isolated Docker Compose projects; browser tests start Vite automatically and use stub HTTP responses. Integration cleanup removes its disposable volumes; failure runs retain their own volumes for inspection. See [testing documentation](docs/testing.md) for coverage and details.
 
-The stress suite dispatches 1k, 10k and 100k-request scenarios within one second, including 100-stock and 10k-stock cases and duplicate identifiers. Additional tests cover opening/closing boundaries, multi-instance operation, overload and crash recovery. Actual dispatch timing validates the generator; response completion/queue drain are separate measurements.
+## Stress Test
 
-Expected correctness: no overselling; one allocation/order per identifier per sale; acknowledged admissions survive local crashes and complete once services/recovery restore operation. Saturation can return retryable busy before admission. Uncertain responses are reconciled rather than counted as rejection.
+### Running Instruction
 
-## Stress results
+With dependencies installed and Docker running, select a quick correctness check, the opening-second spike, or the full default suite:
 
-[Measured results](docs/stress-results.md) and [raw artifacts/manifest](docs/evidence/dev19/manifest.json) report three valid prescribed bursts and two invalid 100k bursts. On the M4 Pro host above, the valid 10k-unique run (one API / three workers, 5,000 sockets) wrote its last request at 947.11 ms: 8,975 busy, 21 confirming, 26 queued/delayed, 978 non-JSON proxy responses; 47 admissions became 47 orders. Response p95/p99: 2,693.43 / 2,753.62 ms; drain after responses: 38.08 s; all accounting invariants passed. The stress proxy uses one CPU / 512 MiB, larger than the demo proxy. Both 100k bursts exceeded one second; measured 100k/s capacity is unproven. Bounded admission slots, AOF cadence, serial worker drain and generator/ingress saturation are documented limits. The full per-scenario table is in [testing](docs/testing.md).
+```sh
+pnpm test:stress no-oversell duplicates
+pnpm test:stress spike-10k
+pnpm test:stress
+```
 
-## Recovery and limitations
+Each attempt builds and runs an isolated Compose project with its own sale and volumes. Cleanup removes only that project's disposable test volumes. Results, request timings, service logs and resource samples are written to `test-results/stress/<project>/<scenario>/`.
 
-Use [recovery runbook](<docs/recovery.md>) to inspect pending work and replay delayed processing. Never restore stock by simply rerunning seed or subtracting finalized orders alone. Pending reservations also consume stock. Missing data during outage is not definitive rejection.
+### Summary
 
-No payment, fraud, shipping eligibility or other external business rejection exists; valid admitted work has no defined permanent business failure. Eventual success assumes service recovery/manual remediation and intact persistent storage. The system does not verify human identity. Future authentication could introduce a user foreign key; multiple products require a product entity and revised relationships.
+Expected outcomes are stock conservation, no overselling, at most one allocation/order per normalized identifier, and completion of every surviving admitted reservation. Healthy runs must preserve every acknowledged reservation. Busy and sold-out responses are reported separately from transport errors and uncertain responses; dispatch timing and order completion are measured independently.
 
-Operator examples: `node --env-file=.env scripts/recovery.mjs inspect flash-sale` and `node --env-file=.env scripts/recovery.mjs replay flash-sale 1234567890000-0` (replace the example stream ID with the inspected exhausted entry). Read the runbook first. [Operational limits](docs/operations.md) describe bounded pools, proxy deadlines and retained-stream storage growth.
+For `spike-10k`, the acceptance target is 10,000 request writes within one second, all 100 units sold, admission-to-committed-order visibility p99 below 2,000 ms, and every admitted order completed within 10,000 ms. These are acceptance targets, not a claim of measured capacity or crash-safe admission durability.
 
-See the [final requirement audit, verification receipt and submission walkthrough](docs/submission-audit.md). Run `node scripts/submission-check.mjs` from a clean final commit to collect SHA-pinned evidence. Performance gaps remain explicit submission gates; the audit records the user's human checkpoint approvals.
+### Comprehensive Stress Test Documentation
 
-Record the final submission commit with `git rev-parse HEAD`. The user confirmed approval of human checkpoints A–G and final human review on 16 October 2026. The [fresh-checkout rehearsal](docs/testing.md#human-checkpoint-g) remains available for reproduction; performance requirements remain open.
+> **Comprehensive stress-test documentation is pending.**
+>
+> **[Read the stress harness guide →](scripts/stress/README.md)** for current scenarios, configuration and acceptance checks.
