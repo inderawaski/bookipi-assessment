@@ -74,30 +74,52 @@ pnpm test:browser
 pnpm test:failure
 ```
 
-`pnpm test` runs unit and harness tests. Integration and failure tests start isolated Docker Compose projects; browser tests start Vite automatically and use stub HTTP responses. Integration cleanup removes its disposable volumes; failure runs retain their own volumes for inspection. See [testing documentation](docs/testing.md) for coverage and details.
+`pnpm test` runs unit and harness tests. Integration and failure tests start isolated Docker Compose projects; browser tests start Vite automatically and use stub HTTP responses. Integration cleanup removes its disposable volumes; failure runs retain their own volumes for inspection.
 
 ## Stress Test
 
-### Running Instruction
+### Instructions
 
-With dependencies installed and Docker running, select a quick correctness check, the opening-second spike, or the full default suite:
+With dependencies installed and Docker running, run the seven required workloads:
 
 ```sh
-pnpm test:stress no-oversell duplicates
-pnpm test:stress spike-10k
 pnpm test:stress
 ```
 
-Each attempt builds and runs an isolated Compose project with its own sale and volumes. Cleanup removes only that project's disposable test volumes. Results, request timings, service logs and resource samples are written to `test-results/stress/<project>/<scenario>/`.
+Run an individual workload by name:
 
-### Summary
+```sh
+pnpm test:stress no-oversell
+pnpm test:stress duplicates
+pnpm test:stress sufficient-stock
+pnpm test:stress normal-burst
+pnpm test:stress aggressive-burst
+pnpm test:stress extreme-burst
+pnpm test:stress spike-10k
+```
 
-Expected outcomes are stock conservation, no overselling, at most one allocation/order per normalized identifier, and completion of every surviving admitted reservation. Healthy runs must preserve every acknowledged reservation. Busy and sold-out responses are reported separately from transport errors and uncertain responses; dispatch timing and order completion are measured independently.
+The default deployment uses six API replicas and one worker. Each attempt builds
+an isolated Compose project with a fresh sale and disposable data volumes. The
+harness preconnects up to 5,000 sockets and schedules requests independently of
+responses over 90% of the dispatch window; `no-oversell` and `duplicates` release
+requests together. Every request write must finish before its scenario's deadline.
+This measures writes handed to the operating system, not server receipt or
+response completion.
 
-For `spike-10k`, the acceptance target is 10,000 request writes within one second, all 100 units sold, admission-to-committed-order visibility p99 below 2,000 ms, and every admitted order completed within 10,000 ms. These are acceptance targets, not a claim of measured capacity or crash-safe admission durability.
+All workloads check stock conservation, unique allocations/orders, matching
+admissions and completed work. The primary `spike-10k` target is 10,000 unique
+requests within one second with 100 stock, zero proxy/transport errors, all 100
+orders committed, order visibility p99 below two seconds and every admitted order
+completed within ten seconds. `sufficient-stock` reports allocation and order
+latency without requiring full allocation or the spike's latency gates.
 
-### Comprehensive Stress Test Documentation
+`STRESS_API_REPLICAS`, `STRESS_WORKER_REPLICAS`, `STRESS_CONNECTIONS` and
+`STRESS_MAX_CONNECTIONS` allow explicit overrides. Generated diagnostics go to
+`test-results/stress/` and are not retained in the repository. Cleanup removes
+only that attempt's disposable service volumes.
 
-> **Comprehensive stress-test documentation is pending.**
+### Stress Test Outcomes
+
+> **[Read the stress-test outcomes →](docs/stress-testing.md)**
 >
-> **[Read the stress harness guide →](scripts/stress/README.md)** for current scenarios, configuration and acceptance checks.
+> Latest results for the seven required workloads with six pre-scaled APIs.

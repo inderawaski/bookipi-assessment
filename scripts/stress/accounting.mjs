@@ -3,22 +3,20 @@ export const scenarios = [
   { name: 'no-oversell', stock: 10, requests: 100, identifiers: 100, scheduleWindowMs: 0 },
   { name: 'duplicates', stock: 10, requests: 100, identifiers: 10, scheduleWindowMs: 0 },
   { name: 'sufficient-stock', stock: 1000, requests: 1000, identifiers: 1000, measureOrders: true },
-  { name: 'burst-10s', stock: 100, requests: 5000, identifiers: 5000, dispatchWindowMs: 10000 },
-  { name: 'burst-3s', stock: 100, requests: 5000, identifiers: 5000, dispatchWindowMs: 3000 },
-  { name: 'burst-1s', stock: 100, requests: 5000, identifiers: 5000 },
+  { name: 'normal-burst', stock: 100, requests: 5000, identifiers: 5000, dispatchWindowMs: 10000 },
+  { name: 'aggressive-burst', stock: 100, requests: 5000, identifiers: 5000, dispatchWindowMs: 3000 },
+  { name: 'extreme-burst', stock: 100, requests: 5000, identifiers: 5000 },
   { name: 'spike-10k', stock: 100, requests: 10000, identifiers: 10000, expectFill: true, orderSlo: true },
-  { name: 'spike-10k-2s', stock: 100, requests: 10000, identifiers: 10000, dispatchWindowMs: 2000, expectFill: true, orderSlo: true, optional: true },
-  { name: 'same-key-retries', stock: 10, requests: 100, identifiers: 10, sameKey: true, scheduleWindowMs: 0 },
-  { name: 'healthy', stock: 8, requests: 8, identifiers: 8, expectFill: true },
-  { name: 'closing-worker-crash', stock: 1000, requests: 1000, identifiers: 1000, boundary: 'closing', failure: 'worker' },
-  { name: 'opening', stock: 16, requests: 16, identifiers: 16, boundary: 'opening' },
-  { name: 'closing', stock: 1000, requests: 1000, identifiers: 1000, boundary: 'closing' },
-  { name: 'worker-crash', stock: 1000, requests: 1000, identifiers: 1000, failure: 'worker' },
-  { name: 'repeated', stock: 1000, requests: 1000, identifiers: 1000, repeats: 3 },
+
 ];
 export function inputs(scenario) {
   return Array.from({ length: scenario.requests }, (_, i) => ({ identifier: `person-${i % scenario.identifiers}`,
-    idempotencyKey: `request-${scenario.sameKey ? i % scenario.identifiers : i}` }));
+    idempotencyKey: `request-${i}` }));
+}
+export function allBusinessResponses(records, offered) {
+  return records.length === offered && records.every(record =>
+    Number.isInteger(record.httpStatus) && record.httpStatus >= 200 && record.httpStatus < 500 &&
+    ['SUCCESS', 'PROCESSING', 'REJECTED'].includes(record.response?.status));
 }
 function percentiles(values) {
   values.sort((a, b) => a - b);

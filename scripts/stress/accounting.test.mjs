@@ -1,15 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { inputs, scenarios, summarize, validateFinal, resourceSample, admissionsWithinWindow, orderLatency } from './accounting.mjs';
+import { inputs, scenarios, summarize, validateFinal, resourceSample, admissionsWithinWindow, orderLatency, allBusinessResponses } from './accounting.mjs';
 import { burst } from './generator.mjs';
 
 test('prescribed cases and duplicate keys have exact cardinality', () => {
+  assert.deepEqual(scenarios.map(s => s.name), ['no-oversell', 'duplicates', 'sufficient-stock', 'normal-burst', 'aggressive-burst', 'extreme-burst', 'spike-10k']);
   assert.deepEqual(scenarios.slice(0, 7).map(s => [s.stock, s.requests, s.identifiers]), [[10, 100, 100], [10, 100, 10], [1000, 1000, 1000], [100, 5000, 5000], [100, 5000, 5000], [100, 5000, 5000], [100, 10000, 10000]]);
   for (const scenario of scenarios) {
     const records = inputs(scenario);
     assert.equal(new Set(records.map(r => r.identifier)).size, scenario.identifiers);
-    assert.equal(new Set(records.map(r => r.idempotencyKey)).size, scenario.sameKey ? scenario.identifiers : scenario.requests);
+    assert.equal(new Set(records.map(r => r.idempotencyKey)).size, scenario.requests);
   }
 });
 test('late responses do not invalidate timely dispatch; latency and outcomes account exactly', () => {
@@ -18,6 +19,14 @@ test('late responses do not invalidate timely dispatch; latency and outcomes acc
   assert.equal(summary.allResponsesWithinOneSecond, false);
   assert.deepEqual(summary.latencyMs, { p50: 50, p95: 1500, p99: 1500 });
   assert.equal(Object.values(summary.outcomes).reduce((a, b) => a + b), 2);
+});
+test('business response gate rejects proxy, transport, malformed and missing responses', () => {
+  const soldOut = { httpStatus: 409, response: { status: 'REJECTED', reason: 'sold_out' } };
+  assert.equal(allBusinessResponses([soldOut], 1), true);
+  for (const record of [{ httpStatus: 504 }, {}, { httpStatus: 200, response: {} }, { ...soldOut, httpStatus: 503 }]) {
+    assert.equal(allBusinessResponses([record], 1), false);
+  }
+  assert.equal(allBusinessResponses([], 1), false);
 });
 test('missing, late, duplicate and inconsistent dispatch evidence invalidates runs', () => {
   assert.equal(summarize([{ index: 0, scheduledMs: 0, outcome: 'transport_error' }], 1).validDispatch, false);
@@ -163,12 +172,4 @@ test('generator honors synchronized release and custom arrival windows over real
   const synchronized = await burst(base, 'sale', { ...scenario, scheduleWindowMs: 0 });
   assert.deepEqual(synchronized.records.map(r => r.scheduledMs), [0, 0, 0]);
   assert.equal(synchronized.validDispatch, true);
-});
-
-test('optional two-second spike changes arrival window while preserving stock and order gates', () => {
-  const baseline = scenarios.find(s => s.name === 'spike-10k');
-  const comparison = scenarios.find(s => s.name === 'spike-10k-2s');
-  assert.equal(comparison.optional, true);
-  assert.equal(comparison.dispatchWindowMs, 2000);
-  for (const field of ['stock', 'requests', 'identifiers', 'expectFill', 'orderSlo']) assert.equal(comparison[field], baseline[field]);
 });

@@ -1,6 +1,8 @@
 # Used only with compose.test.yaml and a randomly generated flash-test project.
 services:
   api:
+    deploy:
+      replicas: 6
     ports: ["127.0.0.1::3000"]
   worker:
     cpus: 1.0

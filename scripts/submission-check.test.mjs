@@ -51,8 +51,9 @@ test('pins commands, measurement configuration and artifact hashes without claim
   assert.equal(report.stress.STRESS_CONNECTIONS, '1000');
   assert.equal(report.humanReview, 'pending');
   assert.equal(report.automatedChecksPassed, true);
-  assert.equal(report.steps.length, 12);
-  assert.deepEqual(report.steps[9].command.slice(2), ['no-oversell', 'duplicates', 'sufficient-stock', 'burst-10s', 'burst-3s', 'burst-1s', 'spike-10k']);
+  assert.equal(report.steps.length, 11);
+  assert.deepEqual(report.steps[9].command.slice(2), ['no-oversell', 'duplicates', 'sufficient-stock', 'normal-burst', 'aggressive-burst', 'extreme-burst', 'spike-10k']);
+  assert.equal(report.steps.filter(step => step.command[1] === 'test:stress').length, 1);
   assert.equal(manifest.serviceArtifacts.length, 1);
   for (const file of manifest.files) {
     assert.equal(file.sha256, createHash('sha256').update(readFileSync(join(output, file.path))).digest('hex'));

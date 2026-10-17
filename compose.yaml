@@ -60,6 +60,8 @@ services:
       retries: 30
   api:
     <<: *runtime
+    deploy:
+      replicas: ${API_REPLICAS:-6}
     build: { context: ., target: api }
     environment:
       <<: *environment

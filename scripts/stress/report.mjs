@@ -3,11 +3,11 @@ import { resolve, relative, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 
-// Explicit project paths keep unrelated experiments out of the committed evidence.
+// Explicit project paths keep unrelated experiments out of the generated archive.
 const projects = process.argv.slice(2);
 if (!projects.length) throw new Error('Pass test-results/stress/flash-test-* project paths');
 const root = resolve('test-results/stress');
-const destination = resolve('docs/evidence/dev19');
+const destination = resolve('test-results/stress-archive');
 const summaries = [], manifest = [];
 const withoutRecords = burst => burst && Object.fromEntries(Object.entries(burst).filter(([key]) => key !== 'records'));
 for (const project of projects) {
@@ -29,11 +29,11 @@ for (const project of projects) {
       if (file.name === 'result.json') {
         const result = JSON.parse(data);
         summaries.push({ project: name, scenario: scenario.name, startedAt: result.startedAt, replicas: { api: host.apiReplicas ?? 1, worker: host.workerReplicas ?? 1 }, settings: result.settings,
-          sale: result.sale, passed: result.passed && !runnerError, runnerError, error: result.error, recoveryError: result.recoveryError,
-          burst: withoutRecords(result.burst), repeatedBursts: result.repeatedBursts?.map(withoutRecords),
+          sale: result.sale, passed: result.passed && !runnerError, runnerError, error: result.error,
+          burst: withoutRecords(result.burst),
           orders: result.final?.orders.length, admissions: result.final?.entries.length, invariants: result.final?.invariants,
           orderVisibility: result.orderVisibility, observationError: result.observationError,
-          queueDrainMs: result.queueDrainMs, failureEvents: result.failureEvents, replayAfterEnd: result.replayAfterEnd, newAfterEnd: result.newAfterEnd });
+          queueDrainMs: result.queueDrainMs });
       }
     }
     if (!existsSync(join(directory, 'result.json'))) summaries.push({ project: name, scenario: scenario.name,
@@ -46,4 +46,4 @@ writeFileSync(join(destination, 'manifest.json'), JSON.stringify(manifest, null,
 writeFileSync(join(destination, 'summary.json'), JSON.stringify(summaries, null, 2) + '\n');
 console.log('| Project | Case | Valid dispatch | Last write ms | Orders | Drain ms | Passed |');
 console.log('| --- | --- | --- | --- | --- | --- | --- |');
-for (const r of summaries) console.log(`| ${r.project} | ${r.scenario} | ${[r.burst, ...(r.repeatedBursts ?? [])].every(burst => burst?.validDispatch === true)} | ${r.burst?.dispatchLastMs?.toFixed(1) ?? '—'} | ${r.orders ?? '—'} | ${r.queueDrainMs?.toFixed(1) ?? '—'} | ${r.passed} |`);
+for (const r of summaries) console.log(`| ${r.project} | ${r.scenario} | ${r.burst?.validDispatch === true} | ${r.burst?.dispatchLastMs?.toFixed(1) ?? '—'} | ${r.orders ?? '—'} | ${r.queueDrainMs?.toFixed(1) ?? '—'} | ${r.passed} |`);
