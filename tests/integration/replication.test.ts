@@ -14,8 +14,10 @@ it('maintains one asynchronous read-only replica and copies primary admissions',
     process.env.TEST_REDIS_REPLICA_URL!,
     'commands',
   );
+
   await database.end();
   await Promise.all([redis.connect(), replica.connect()]);
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -24,6 +26,7 @@ it('maintains one asynchronous read-only replica and copies primary admissions',
   };
   const keys = admissionKeys(sale.id);
   const admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
+
   try {
     expect(await redis.info('replication')).toContain('connected_slaves:1');
     expect(await replica.info('replication')).toContain(
@@ -60,8 +63,10 @@ it('maintains one asynchronous read-only replica and copies primary admissions',
 
 it('acknowledges admission while the replica is offline without waiting for replication', async () => {
   const { redis, database } = testServices();
+
   await database.end();
   await redis.connect();
+
   const docker = (...args: string[]) =>
     execFileSync(
       'docker',
@@ -83,6 +88,7 @@ it('acknowledges admission while the replica is offline without waiting for repl
   };
   const keys = admissionKeys(sale.id);
   const admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
+
   try {
     await redis.hSet(keys[0], {
       starts_at: String(Date.parse(sale.startsAt)),

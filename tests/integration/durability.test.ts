@@ -10,8 +10,10 @@ import { testServices } from '../services.js';
 
 async function fixture() {
   const { redis, database } = testServices();
+
   await database.end();
   await redis.connect();
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -19,6 +21,7 @@ async function fixture() {
     initialStock: 2,
   };
   const keys = admissionKeys(sale.id);
+
   await redis.hSet(keys[0], {
     starts_at: String(Date.parse(sale.startsAt)),
     ends_at: String(Date.parse(sale.endsAt)),
@@ -26,11 +29,15 @@ async function fixture() {
     remaining_stock: '2',
     configuration_version: '1',
   });
+
   const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
+
   return { redis, sale, keys, gate };
 }
+
 it('fences unreconciled sales, confirms replay/duplicates/lookup, and gates worker evidence', async () => {
   const f = await fixture();
+
   try {
     expect(
       await f.gate.place(f.sale.id, {
@@ -61,9 +68,13 @@ it('fences unreconciled sales, confirms replay/duplicates/lookup, and gates work
       reason: 'already_placed',
       existingOrder: { status: 'PROCESSING', phase: 'queued' },
     });
+
     const lookup = await f.gate.lookup(f.sale.id, ' Person ');
+
     expect(lookup.status).toBe('present');
+
     if (lookup.status !== 'present') throw new Error('Unconfirmed');
+
     await expect(
       f.gate.confirmForWorker(
         f.sale.id,
@@ -89,6 +100,7 @@ it('fences unreconciled sales, confirms replay/duplicates/lookup, and gates work
 });
 it('never treats missing lookup as rejection, including a delayed admission executing afterward', async () => {
   const f = await fixture();
+
   try {
     await f.gate.recover(f.sale, []);
     expect(await f.gate.lookup(f.sale.id, 'person')).toEqual({
@@ -107,6 +119,7 @@ it('never treats missing lookup as rejection, including a delayed admission exec
 });
 it('validates another connection reservation without advancing a durability checkpoint', async () => {
   const f = await fixture();
+
   try {
     await f.gate.recover(f.sale, []);
     await admitPurchase(f.redis, f.sale.id, {
@@ -123,6 +136,7 @@ it('validates another connection reservation without advancing a durability chec
 });
 it('recovery preserves pending stock and refuses mismatched DB orders or queue data', async () => {
   const f = await fixture();
+
   try {
     await f.gate.recover(f.sale, []);
     await admitPurchase(f.redis, f.sale.id, {
@@ -149,13 +163,17 @@ it('recovery preserves pending stock and refuses mismatched DB orders or queue d
 });
 it('validates matching DB orders and refuses expiring allocation state', async () => {
   const f = await fixture();
+
   try {
     await f.gate.recover(f.sale, []);
+
     const result = await admitPurchase(f.redis, f.sale.id, {
       identifier: 'person',
       idempotencyKey: 'key',
     });
+
     if (result.status !== 'reserved') throw new Error('Missing reservation');
+
     await f.gate.recover(f.sale, [
       { identifier: 'person', admittedAtMs: result.reservation.admittedAtMs },
     ]);
@@ -194,6 +212,7 @@ it('keeps a validated epoch visible while another replica prepares recovery', as
     },
   );
   let recovery: Promise<void> | undefined;
+
   try {
     await f.gate.recover(f.sale, []);
     expect(
@@ -202,7 +221,9 @@ it('keeps a validated epoch visible while another replica prepares recovery', as
         idempotencyKey: 'key',
       }),
     ).toMatchObject({ phase: 'queued' });
+
     const epoch = await f.redis.hGet(f.keys[0], 'recovered_run');
+
     recovery = peer.recover(f.sale, []);
     await paused;
     expect(await f.redis.hGet(f.keys[0], 'recovered_run')).toBe(epoch);
@@ -223,6 +244,7 @@ it('keeps a validated epoch visible while another replica prepares recovery', as
 
 it('fences configuration mismatches atomically without releasing reservations', async () => {
   const f = await fixture();
+
   try {
     await f.gate.recover(f.sale, []);
     await f.gate.place(f.sale.id, {
@@ -254,6 +276,7 @@ it('leaves missing pre-sale state configurable after a failed reconciliation', a
     endsAt: new Date(Date.now() + 120000).toISOString(),
   };
   const key = admissionKeys(sale.id)[0];
+
   try {
     await expect(f.gate.recover(sale, [])).rejects.toThrow(
       'invalid accounting',

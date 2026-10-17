@@ -4,14 +4,17 @@ import {
   initializeAdmission,
   saleKey,
 } from './configuration.js';
+
 const sale = {
   id: 'arbitrary } / 人',
   startsAt: '2030-01-01T00:00:00Z',
   endsAt: '2030-01-02T00:00:00Z',
   initialStock: 3,
 };
+
 it('initializes from the Redis write acknowledgement without a persistence wait', async () => {
   const sendCommand = vi.fn().mockResolvedValue(1);
+
   await expect(
     initializeAdmission({ sendCommand }, sale),
   ).resolves.toBeUndefined();
@@ -25,9 +28,11 @@ it('compares immutable fields while accepting depleted stock', async () => {
     '3',
     '0',
   ];
+
   await expect(
     assertAdmissionConfiguration({ sendCommand: async () => fields }, sale),
   ).resolves.toBeUndefined();
+
   for (const actual of [
     [null, null, null, null],
     [...fields.slice(0, 3), '4'],
@@ -38,5 +43,6 @@ it('compares immutable fields while accepting depleted stock', async () => {
       assertAdmissionConfiguration({ sendCommand: async () => actual }, sale),
     ).rejects.toThrow('inconsistent');
   }
+
   expect(saleKey(sale.id)).toMatch(/^sale:\{[0-9a-f]+\}:admission$/);
 });

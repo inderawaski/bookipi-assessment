@@ -4,8 +4,10 @@ import {
   saleKey,
 } from '../packages/redis/dist/index.js';
 import { parseConfiguration } from '../packages/configuration/dist/index.js';
+
 const config = parseConfiguration(process.env, 'worker');
 const [action, sale, streamId] = process.argv.slice(2);
+
 if (
   !sale ||
   !['inspect', 'replay'].includes(action) ||
@@ -13,9 +15,12 @@ if (
 ) {
   throw new Error('Usage: recovery.mjs inspect SALE | replay SALE STREAM_ID');
 }
+
 const redis = createRedisConnection(config.redisUrl, 'durability');
+
 try {
   await redis.connect();
+
   if (action === 'inspect') {
     // Explicit operator output; service logs never include these identifiers.
     console.log(

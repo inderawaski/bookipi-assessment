@@ -1,17 +1,21 @@
 import { expect, it, vi, beforeEach } from 'vitest';
+
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   safety: vi.fn(),
   pool: vi.fn(),
 }));
+
 vi.mock('../index.js', () => ({
   createRedisConnection: mocks.create,
   assertRedisSafety: mocks.safety,
 }));
 vi.mock('redis', async (importOriginal) => {
   const actual = await importOriginal<typeof import('redis')>();
+
   return { ...actual, createClientPool: mocks.pool };
 });
+
 import { TimeoutError } from 'redis';
 import { RedisAdmission } from './acknowledgement.js';
 import { confirmationScript } from './state-scripts.js';
@@ -35,18 +39,22 @@ function connection() {
         throw new Error(
           'Admission must not wait for persistence or replication',
         );
+
       return args[1] === confirmationScript
         ? ['key', '100', '1-0']
         : ['reserved', 'key', '100', '1-0', 'new'];
     }),
   };
+
   return client;
 }
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.safety.mockResolvedValue(undefined);
   mocks.pool.mockImplementation(() => {
     const client = mocks.create();
+
     return {
       on: vi.fn(),
       connect: () => client.connect(),
@@ -61,6 +69,7 @@ beforeEach(() => {
 });
 it('acknowledges the reservation after one Lua call without a confirmation write or durability wait', async () => {
   const client = connection();
+
   mocks.create.mockReturnValue(client);
   expect(
     await new RedisAdmission('redis://unused').place('sale', {
@@ -79,8 +88,11 @@ it('acknowledges the reservation after one Lua call without a confirmation write
 });
 it('validates lookup and worker identity without waiting for persistence', async () => {
   const client = connection();
+
   mocks.create.mockReturnValue(client);
+
   const gate = new RedisAdmission('redis://unused');
+
   expect((await gate.lookup('sale', 'person')).status).toBe('present');
   await expect(
     gate.confirmForWorker('sale', 'person', 'key', '1-0'),
@@ -98,6 +110,7 @@ it.each(['replay', 'duplicate', 'rejected'])(
   'returns acknowledged %s outcomes without another Redis command',
   async (kind) => {
     const client = connection();
+
     client.sendCommand.mockResolvedValueOnce(
       kind === 'rejected'
         ? ['rejected', 'sold_out']
@@ -106,7 +119,9 @@ it.each(['replay', 'duplicate', 'rejected'])(
           : ['reserved', 'key', '100', '1-0', 'replay'],
     );
     mocks.create.mockReturnValue(client);
+
     const processing = { status: 'PROCESSING', phase: 'queued' };
+
     expect(
       await new RedisAdmission('redis://unused').place('sale', {
         identifier: 'person',
@@ -128,6 +143,7 @@ it.each(['replay', 'duplicate', 'rejected'])(
 );
 it('keeps a lost Redis reply uncertain rather than claiming acknowledgement', async () => {
   const client = connection();
+
   client.sendCommand.mockRejectedValue(new Error('Disconnected'));
   mocks.create.mockReturnValue(client);
   expect(
@@ -139,8 +155,11 @@ it('keeps a lost Redis reply uncertain rather than claiming acknowledgement', as
 });
 it('reuses a connection across purchases without config or persistence checks', async () => {
   const client = connection();
+
   mocks.create.mockReturnValue(client);
+
   const gate = new RedisAdmission('redis://unused');
+
   await gate.place('sale', { identifier: 'person', idempotencyKey: 'key' });
   await gate.place('sale', { identifier: 'person', idempotencyKey: 'key' });
   expect(mocks.create).toHaveBeenCalledTimes(1);
@@ -151,6 +170,7 @@ it('reuses a connection across purchases without config or persistence checks', 
 });
 it('refuses injected failpoints outside test mode', () => {
   vi.stubEnv('NODE_ENV', 'production');
+
   try {
     expect(
       () => new RedisAdmission('redis://unused', 1, 100, async () => {}),
@@ -162,8 +182,11 @@ it('refuses injected failpoints outside test mode', () => {
 
 it('uses the library pool without overriding size or acquisition timeout', async () => {
   const client = connection();
+
   mocks.create.mockReturnValue(client);
+
   const gate = new RedisAdmission('redis://unused');
+
   try {
     await gate.connect();
     expect(mocks.pool).toHaveBeenCalledWith(
@@ -183,6 +206,7 @@ it('uses the library pool without overriding size or acquisition timeout', async
 
 it('returns busy only when the library acquisition expires before executing Lua', async () => {
   const client = connection();
+
   mocks.create.mockReturnValue(client);
   mocks.pool.mockReturnValue({
     on: vi.fn(),
@@ -192,7 +216,9 @@ it('returns busy only when the library acquisition expires before executing Lua'
       .fn()
       .mockRejectedValue(new TimeoutError('Timeout waiting for a client')),
   });
+
   const gate = new RedisAdmission('redis://unused');
+
   try {
     expect(
       await gate.place('sale', { identifier: 'person', idempotencyKey: 'key' }),
@@ -205,15 +231,20 @@ it('returns busy only when the library acquisition expires before executing Lua'
 
 it('keeps an operation timeout uncertain and reconnects before a later operation', async () => {
   const client = connection();
+
   mocks.create.mockReturnValue(client);
+
   let release!: (reply: unknown) => void;
+
   client.sendCommand.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         release = resolve;
       }),
   );
+
   const gate = new RedisAdmission('redis://unused', 1, 20);
+
   try {
     expect(
       await gate.place('sale', {
@@ -234,12 +265,15 @@ it('keeps an operation timeout uncertain and reconnects before a later operation
 
 it('cancels queued callers on shutdown and prevents their later callback from sending Lua', async () => {
   const client = connection();
+
   mocks.create.mockReturnValue(client);
+
   let execute!: (redis: ReturnType<typeof connection>) => Promise<unknown>,
     started!: () => void;
   const ready = new Promise<void>((resolve) => {
     started = resolve;
   });
+
   mocks.pool.mockReturnValue({
     on: vi.fn(),
     connect: vi.fn(),
@@ -247,14 +281,17 @@ it('cancels queued callers on shutdown and prevents their later callback from se
     execute: vi.fn((callback) => {
       execute = callback;
       started();
+
       return new Promise(() => {});
     }),
   });
+
   const gate = new RedisAdmission('redis://unused');
   const waiting = gate.place('sale', {
     identifier: 'waiting',
     idempotencyKey: 'waiting',
   });
+
   await ready;
   gate.close();
   expect(await waiting).toEqual({ status: 'PROCESSING', phase: 'confirming' });

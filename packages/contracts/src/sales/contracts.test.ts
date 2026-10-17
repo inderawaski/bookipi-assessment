@@ -24,6 +24,7 @@ describe('sale identity and submission contract', () => {
   });
   it('enforces UTF-8 storage limits after normalization', () => {
     expect(normalizeIdentifier('é'.repeat(512))).toHaveLength(512);
+
     for (const value of ['', ' \n', 'a\0b', 'é'.repeat(513)])
       expect(() => normalizeIdentifier(value)).toThrow();
   });
@@ -32,6 +33,7 @@ describe('sale identity and submission contract', () => {
       identifier: 'Alice',
       idempotencyKey: 'key',
     });
+
     expect(
       compareSubmission(
         original,
@@ -65,6 +67,7 @@ describe('sale identity and submission contract', () => {
         }),
       ),
     ).toBe('new');
+
     for (const key of ['', 'key\n', 'a b', 'é', 'k'.repeat(129)])
       expect(() =>
         normalizePurchase('sale', { identifier: 'alice', idempotencyKey: key }),
@@ -82,8 +85,10 @@ describe('state safety', () => {
     expect(canTransitionSubmission('unresolved', 'rejected')).toBe(true);
     expect(canTransitionSubmission('reserved', 'acknowledged')).toBe(true);
     expect(canTransitionSubmission('acknowledged', 'persisted')).toBe(true);
+
     for (const state of ['reserved', 'acknowledged', 'persisted'] as const)
       expect(canTransitionSubmission(state, 'rejected')).toBe(false);
+
     expect(canTransitionSubmission('reserved', 'persisted')).toBe(true);
     expect(canTransitionSubmission('acknowledged', 'lost')).toBe(true);
     expect(canTransitionSubmission('persisted', 'lost')).toBe(false);
@@ -93,6 +98,7 @@ describe('state safety', () => {
     const success = { status: 'SUCCESS', orderId: 'order-1' } as const;
     const queued = { status: 'PROCESSING', phase: 'queued' } as const;
     const rejected = { status: 'REJECTED', reason: 'sold_out' } as const;
+
     expect(reconcileOrder(success, rejected)).toEqual(success);
     expect(reconcileOrder(queued, rejected)).toEqual(queued);
     expect(reconcileOrder(success, queued)).toEqual(success);
@@ -148,6 +154,7 @@ describe('state safety', () => {
         409,
       ],
     ];
+
     for (const [response, code] of cases)
       expect(purchaseHttpStatus(response)).toBe(code);
   });

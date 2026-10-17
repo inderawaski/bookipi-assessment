@@ -17,6 +17,7 @@ it('shares overlapping probes without caching later readiness checks', async () 
   const probe = singleFlightProbe(check);
   const first = probe(),
     second = probe();
+
   expect(first).toBe(second);
   await started;
   expect(check).toHaveBeenCalledOnce();
@@ -32,6 +33,7 @@ it('shares failures and checks again after dependencies recover', async () => {
   });
   const probe = singleFlightProbe(check);
   const results = await Promise.allSettled([probe(), probe()]);
+
   expect(results.map((result) => result.status)).toEqual([
     'rejected',
     'rejected',

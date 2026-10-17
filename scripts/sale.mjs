@@ -9,6 +9,7 @@ import {
   initializeAdmission,
 } from '../packages/redis/dist/index.js';
 import { parseConfiguration } from '../packages/configuration/dist/index.js';
+
 const config = parseConfiguration(process.env, 'api');
 const database = createDatabase(
   config.databaseUrl,
@@ -16,6 +17,7 @@ const database = createDatabase(
   config.dependencyTimeoutMs,
 );
 const redis = createRedisConnection(config.redisUrl, 'durability');
+
 try {
   if (process.argv[2] === 'migrate') {
     await migrate(database);
@@ -23,14 +25,17 @@ try {
   } else if (process.argv[2] === 'configure' && process.argv.length === 7) {
     if (!/^\d+$/.test(process.argv[6]))
       throw new Error('Stock must be a nonnegative integer');
+
     await redis.connect();
     await assertRedisSafety(redis);
+
     const sale = await persistSale(database, {
       id: process.argv[3],
       startsAt: process.argv[4],
       endsAt: process.argv[5],
       initialStock: Number(process.argv[6]),
     });
+
     await initializeAdmission(redis, sale);
     console.log(
       `Configured ${sale.id}${sale.initialStock === 0 ? ' (sold out)' : ''}`,
@@ -46,5 +51,6 @@ try {
   process.exitCode = 1;
 } finally {
   if (redis.isOpen) redis.destroy();
+
   await database.end();
 }

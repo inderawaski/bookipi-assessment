@@ -22,6 +22,7 @@ async function killAt(
 ) {
   const trace: string[] = [];
   let child: ChildProcess | undefined;
+
   try {
     await new Promise<void>((resolve, reject) => {
       child = fork(
@@ -29,10 +30,12 @@ async function killAt(
         [JSON.stringify({ mode, boundary, saleId, entry })],
         { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] },
       );
+
       const timer = setTimeout(
         () => reject(new Error(`Boundary not reached: ${boundary}`)),
         15000,
       );
+
       child.on('error', reject);
       child.on('exit', () => {
         clearTimeout(timer);
@@ -40,7 +43,9 @@ async function killAt(
       });
       child.on('message', (message) => {
         const hit = (message as { boundary: string }).boundary;
+
         trace.push(hit);
+
         if (hit === boundary) {
           clearTimeout(timer);
           resolve();
@@ -55,6 +60,7 @@ async function killAt(
       );
       child!.kill('SIGKILL');
     });
+
     return trace;
   } finally {
     if (child && child.exitCode === null) child.kill('SIGKILL');
@@ -80,7 +86,9 @@ it.each([
   'SIGKILL %s at %s converges without revoking allocation',
   async (mode, boundary) => {
     const { database, redis } = testServices();
+
     await redis.connect();
+
     const sale = {
       id: randomUUID(),
       startsAt: new Date(Date.now() + 2000).toISOString(),
@@ -89,6 +97,7 @@ it.each([
     };
     const keys = admissionKeys(sale.id);
     const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
+
     try {
       await migrate(database);
       await persistSale(database, sale);
@@ -98,6 +107,7 @@ it.each([
         .poll(
           async () => {
             const time = (await redis.sendCommand(['TIME'])) as string[];
+
             return (
               Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >=
               Date.parse(sale.startsAt)
@@ -106,7 +116,9 @@ it.each([
           { timeout: 5000, interval: 25 },
         )
         .toBe(true);
+
       let entry;
+
       if (mode === 'worker') {
         expect(
           await gate.place(sale.id, {
@@ -120,17 +132,21 @@ it.each([
           id: '>',
         }))![0]!.messages[0]!;
       }
+
       const trace = await killAt(mode!, boundary!, sale.id, entry);
       // The client received no reply from the killed process. Absence is never a rejection.
       const missing = await gate.lookup(sale.id, 'missing');
+
       expect(missing).toEqual({
         status: 'confirming',
         diagnostic: 'missing_without_absence_proof',
       });
+
       const before = await database.query(
         'SELECT id FROM "order" WHERE flash_sale_id=$1',
         [sale.id],
       );
+
       if (mode === 'worker')
         expect(before.rowCount).toBe(
           [
@@ -142,6 +158,7 @@ it.each([
             ? 1
             : 0,
         );
+
       expect(
         await gate.place(sale.id, {
           identifier: 'person',
@@ -154,6 +171,7 @@ it.each([
           idempotencyKey: 'rejected',
         }),
       ).toEqual({ status: 'REJECTED', reason: 'sold_out' });
+
       if (mode === 'admission') {
         await redis.xGroupCreate(keys[4], orderGroup, '0');
         entry = (await redis.xReadGroup(orderGroup, 'recovery', {
@@ -168,15 +186,19 @@ it.each([
           0,
           '0-0',
         );
+
         expect(claimed.messages).toHaveLength(1);
         entry = claimed.messages[0]!;
       }
+
       await processOrder(database, redis, gate, sale.id, entry!);
       await processOrder(database, redis, gate, sale.id, entry!);
+
       const orders = await database.query(
         'SELECT id, user_identifier, admitted_at FROM "order" WHERE flash_sale_id=$1',
         [sale.id],
       );
+
       await gate.recover(
         sale,
         orders.rows.map((r) => ({
@@ -199,7 +221,9 @@ it.each([
           idempotencyKey: 'rejected',
         }),
       ).toEqual({ status: 'REJECTED', reason: 'sold_out' });
+
       const directory = `test-results/failure/${process.env.TEST_PROJECT}`;
+
       await mkdir(directory, { recursive: true });
       await writeFile(
         `${directory}/${mode}-${boundary}.json`,

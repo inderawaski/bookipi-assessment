@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+
 test('shows the purchase page when sale status is unavailable', async ({
   page,
 }) => {

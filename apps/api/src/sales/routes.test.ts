@@ -33,12 +33,16 @@ function fixture() {
   let cached = '';
   const sendCommand = vi.fn(async (args: string[]) => {
     if (args[0] === 'HMGET') return [null, null, null, null];
+
     if (args[2] === '2' && args.length === 5) return ['0', cached];
+
     cached = args[6]!;
+
     return 1;
   });
   const app = createHealthServer(probe);
   const metrics = new Metrics();
+
   registerSaleRoutes(app, {
     configurationScope: '/flash_test',
     database: { query },
@@ -48,20 +52,26 @@ function fixture() {
     metrics,
     webOrigin: 'http://localhost:8080',
   } as unknown as Parameters<typeof registerSaleRoutes>[1]);
+
   return { app, query, probe, place, lookup, hGet, metrics, sendCommand };
 }
+
 it('serves status, encoded generic identities, strict validation, CORS and size bounds', async () => {
   const { app, place } = fixture();
+
   try {
     const status = await app.inject('/sales/SALE');
+
     expect(status.json()).toMatchObject({
       saleId: 'sale',
       status: 'OPEN',
       remainingStock: 2,
     });
     expect(Number.isFinite(Date.parse(status.json().observedAt))).toBe(true);
+
     const post = (payload: object) =>
       app.inject({ method: 'POST', url: '/sales/sale/purchases', payload });
+
     expect(
       (await post({ identifier: ' @. /? ', idempotencyKey: 'key' })).statusCode,
     ).toBe(202);
@@ -70,6 +80,7 @@ it('serves status, encoded generic identities, strict validation, CORS and size 
       identifier: '@. /?',
       idempotencyKey: 'key',
     });
+
     for (const payload of [
       { identifier: 1, idempotencyKey: 'key' },
       { identifier: ' ', idempotencyKey: 'key' },
@@ -77,6 +88,7 @@ it('serves status, encoded generic identities, strict validation, CORS and size 
       { identifier: 'a', idempotencyKey: 'bad key' },
     ])
       expect((await post(payload)).statusCode).toBe(400);
+
     expect((await app.inject('/sales/missing')).statusCode).toBe(404);
     expect(
       (await app.inject('/sales/sale/order?identifier=%00')).statusCode,
@@ -115,6 +127,7 @@ it('serves status, encoded generic identities, strict validation, CORS and size 
 });
 it('never invents absence on database/readiness outages and reads success without Redis', async () => {
   const { app, query, probe } = fixture();
+
   try {
     probe.mockRejectedValue(new Error('offline'));
     expect(
@@ -145,6 +158,7 @@ it('never invents absence on database/readiness outages and reads success withou
 });
 it('preserves every admission rejection, uncertain result and duplicate state', async () => {
   const { app, place, lookup, hGet } = fixture();
+
   try {
     const submit = () =>
       app.inject({
@@ -152,6 +166,7 @@ it('preserves every admission rejection, uncertain result and duplicate state', 
         url: '/sales/sale/purchases',
         payload: { identifier: 'person', idempotencyKey: 'key' },
       });
+
     for (const reason of [
       'upcoming',
       'ended',
@@ -161,17 +176,21 @@ it('preserves every admission rejection, uncertain result and duplicate state', 
       'unavailable',
     ] as const) {
       place.mockResolvedValue({ status: 'REJECTED', reason });
+
       const response = await submit();
+
       expect(response.statusCode).toBe(
         reason === 'busy' ? 429 : reason === 'unavailable' ? 503 : 409,
       );
       expect(response.json()).toEqual({ status: 'REJECTED', reason });
     }
+
     const duplicate = {
       status: 'REJECTED',
       reason: 'already_placed',
       existingOrder: { status: 'PROCESSING', phase: 'confirming' },
     } as const;
+
     place.mockResolvedValue(duplicate);
     lookup.mockResolvedValue({
       status: 'confirming',
@@ -197,6 +216,7 @@ it('preserves every admission rejection, uncertain result and duplicate state', 
 
 it('accounts fixed purchase outcomes without identifier labels', async () => {
   const { app, place, metrics } = fixture();
+
   try {
     const outcomes: PurchaseResponse[] = [
       { status: 'PROCESSING', phase: 'queued' },
@@ -204,6 +224,7 @@ it('accounts fixed purchase outcomes without identifier labels', async () => {
       { status: 'REJECTED', reason: 'sold_out' },
       { status: 'REJECTED', reason: 'invalid_input' },
     ];
+
     for (const outcome of outcomes) {
       place.mockResolvedValue(outcome);
       await app.inject({
@@ -212,9 +233,12 @@ it('accounts fixed purchase outcomes without identifier labels', async () => {
         payload: { identifier: 'private-identifier', idempotencyKey: 'key' },
       });
     }
+
     const result = metrics.render();
+
     for (const name of ['admitted', 'uncertain', 'sold_out', 'invalid_input'])
       expect(result).toContain(`flash_purchase_${name}_total 1\n`);
+
     expect(result).not.toContain('private-identifier');
   } finally {
     await app.close();
@@ -224,13 +248,16 @@ it('accounts fixed purchase outcomes without identifier labels', async () => {
 it('empty lookup is an observation and an unconfirmed submission can resolve on replay', async () => {
   const { app, place, query } = fixture();
   const payload = { identifier: 'person', idempotencyKey: 'same-key' };
+
   try {
     place.mockResolvedValue({ status: 'PROCESSING', phase: 'confirming' });
+
     const first = await app.inject({
       method: 'POST',
       url: '/sales/sale/purchases',
       payload,
     });
+
     expect(first.statusCode).toBe(202);
     expect(first.json()).toEqual({
       status: 'NOT_ORDERED',
@@ -252,11 +279,13 @@ it('empty lookup is an observation and an unconfirmed submission can resolve on 
         : [{ id: 'committed-later' }],
     }));
     place.mockResolvedValue({ status: 'PROCESSING', phase: 'queued' });
+
     const replay = await app.inject({
       method: 'POST',
       url: '/sales/sale/purchases',
       payload,
     });
+
     expect(replay.json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
     expect(
       (await app.inject('/sales/sale/order?identifier=person')).json(),
@@ -275,15 +304,18 @@ it('empty lookup is an observation and an unconfirmed submission can resolve on 
 
 it('admits using only Redis even when PostgreSQL and the readiness probe are unavailable', async () => {
   const { app, place, query, probe } = fixture();
+
   try {
     query.mockRejectedValue(new Error('PostgreSQL unavailable'));
     probe.mockRejectedValue(new Error('Readiness unavailable'));
     place.mockResolvedValue({ status: 'PROCESSING', phase: 'queued' });
+
     const response = await app.inject({
       method: 'POST',
       url: '/sales/sale/purchases',
       payload: { identifier: 'person', idempotencyKey: 'key' },
     });
+
     expect(response.json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
     expect(place).toHaveBeenCalledOnce();
     expect(query).not.toHaveBeenCalled();
@@ -295,6 +327,7 @@ it('admits using only Redis even when PostgreSQL and the readiness probe are una
 
 it('serves cached sale configuration without another database read', async () => {
   const { app, query } = fixture();
+
   try {
     expect((await app.inject('/sales/sale')).statusCode).toBe(200);
     expect(query).toHaveBeenCalledTimes(1);
@@ -314,10 +347,12 @@ it('serves cached sale configuration without another database read', async () =>
 
 it('uses sale fields already preloaded for Lua without filling a second cache from PostgreSQL', async () => {
   const { app, query, sendCommand } = fixture();
+
   try {
     sendCommand.mockImplementation(async (args) => {
       if (args[0] === 'HMGET')
         return ['0', String(Date.parse('2099-01-01')), '2', '1'];
+
       throw new Error('Unexpected cache fallback');
     });
     query.mockRejectedValue(new Error('Unexpected database read'));

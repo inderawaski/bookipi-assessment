@@ -20,7 +20,9 @@ import { testServices } from '../services.js';
 
 it('reports a lost acknowledged reservation as NOT_ORDERED and permits same-key retry without duplicate allocation', async () => {
   const { redis, database } = testServices();
+
   await redis.connect();
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -30,6 +32,7 @@ it('reports a lost acknowledged reservation as NOT_ORDERED and permits same-key 
   const keys = admissionKeys(sale.id),
     admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const app = createHealthServer(async () => {});
+
   registerSaleRoutes(app, {
     configurationScope: '/flash_test',
     database,
@@ -37,6 +40,7 @@ it('reports a lost acknowledged reservation as NOT_ORDERED and permits same-key 
     admission,
     probe: async () => {},
   });
+
   try {
     await migrate(database);
     await persistSale(database, sale);
@@ -48,12 +52,14 @@ it('reports a lost acknowledged reservation as NOT_ORDERED and permits same-key 
       configuration_version: '1',
     });
     await admission.recover(sale, []);
+
     const post = () =>
       app.inject({
         method: 'POST',
         url: `/sales/${sale.id}/purchases`,
         payload: { identifier: 'person', idempotencyKey: 'key' },
       });
+
     expect((await post()).json()).toEqual({
       status: 'PROCESSING',
       phase: 'queued',
@@ -83,7 +89,9 @@ it('reports a lost acknowledged reservation as NOT_ORDERED and permits same-key 
 
 it('caps committed orders when an in-flight commit crosses Redis reservation loss and recovery', async () => {
   const { redis, database } = testServices();
+
   await redis.connect();
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -100,6 +108,7 @@ it('caps committed orders when an in-flight commit crosses Redis reservation los
     release = resolve;
   });
   let first: Promise<string> | undefined;
+
   try {
     await migrate(database);
     await persistSale(database, sale);
@@ -115,14 +124,18 @@ it('caps committed orders when an in-flight commit crosses Redis reservation los
       identifier: 'first',
       idempotencyKey: 'first',
     });
+
     const original = await admission.lookup(sale.id, 'first');
+
     if (original.status !== 'present')
       throw new Error('Missing first reservation');
+
     const identity = {
       saleId: sale.id,
       identifier: 'first',
       admittedAtMs: original.reservation.admittedAtMs,
     };
+
     first = persistOrder(database, identity, async (boundary) => {
       if (boundary === 'before_commit') {
         entered();
@@ -149,14 +162,18 @@ it('caps committed orders when an in-flight commit crosses Redis reservation los
       }),
     ).toEqual({ status: 'PROCESSING', phase: 'queued' });
     await redis.xGroupCreate(keys[4], orderGroup, '0');
+
     const entry = (await redis.xReadGroup(orderGroup, 'replacement', {
       key: keys[4],
       id: '>',
     }))![0]!.messages[0]!;
     const second = processOrder(database, redis, admission, sale.id, entry);
+
     await delay(100);
     release();
+
     const firstId = await first;
+
     await second;
     expect(
       (

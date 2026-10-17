@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 // Transactional, serialized and rerunnable; no migration bookkeeping table is needed.
 export async function migrate(database: Pool) {
   const client = await database.connect();
+
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(7007)');
@@ -34,6 +35,7 @@ export async function migrate(database: Pool) {
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
+
     throw error;
   } finally {
     client.release();

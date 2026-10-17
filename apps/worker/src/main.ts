@@ -1,4 +1,5 @@
 import { startService } from './service.js';
+
 try {
   await startService('worker');
 } catch (error) {

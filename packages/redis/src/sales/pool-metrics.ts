@@ -4,7 +4,9 @@ export interface AdmissionMetrics {
   set(name: string, value: number): void;
   observe(name: string, seconds: number): void;
 }
+
 export type AdmissionOperation = 'purchase' | 'lookup' | 'recovery';
+
 // Cumulative histogram buckets: 0.25-ms resolution through 20 ms, then bounded tails.
 const bounds = [
   ...Array.from({ length: 80 }, (_, i) => (i + 1) / 4000),
@@ -19,6 +21,7 @@ const bounds = [
   5,
   10,
 ];
+
 export class PoolMeasurements {
   private active = 0;
   private peak = 0;
@@ -26,12 +29,17 @@ export class PoolMeasurements {
   constructor(private readonly metrics?: AdmissionMetrics) {}
   duration(name: string, seconds: number): void {
     if (!this.metrics) return;
+
     this.metrics.observe(name, seconds);
+
     const maximum = Math.max(this.maxima.get(name) ?? 0, seconds);
+
     this.maxima.set(name, maximum);
     this.metrics.set(`${name}_max`, maximum);
+
     for (const bound of bounds)
       if (seconds <= bound) this.metrics.add(`${name}_bucket{le="${bound}"}`);
+
     this.metrics.add(`${name}_bucket{le="+Inf"}`);
   }
   acquire(): void {

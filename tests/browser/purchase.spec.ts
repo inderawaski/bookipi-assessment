@@ -12,6 +12,7 @@ const available = (order: object = { status: 'NOT_ORDERED' }) => ({
   status: 'AVAILABLE',
   order,
 });
+
 async function setup(page: Page) {
   await page.route('**/api/sales/flash-sale', (route) =>
     route.fulfill({ json: openSale() }),
@@ -26,12 +27,16 @@ test('normalizes arbitrary identifiers, rejects empty input and locks double sub
   page,
 }) => {
   await setup(page);
+
   const button = page.getByRole('button', { name: 'Buy Now' });
+
   await expect(button).toBeDisabled();
   await page.getByLabel('Your identifier').fill('   ');
   await expect(button).toBeDisabled();
+
   let deliveries = 0;
   let body: { identifier: string } | undefined;
+
   await page.route('**/purchases', async (route) => {
     deliveries++;
     body = route.request().postDataJSON();
@@ -54,9 +59,12 @@ test('uncertain delivery retries the same key and recovers to success', async ({
   page,
 }) => {
   await setup(page);
+
   const keys: string[] = [];
+
   await page.route('**/purchases', async (route) => {
     keys.push(route.request().postDataJSON().idempotencyKey);
+
     if (keys.length === 1) await route.abort();
     else
       await route.fulfill({
@@ -103,6 +111,7 @@ test('late lookup and purchase cannot overwrite a different identifier', async (
   page,
 }) => {
   await setup(page);
+
   let releaseLookup!: () => void;
   let releasePurchase!: () => void;
   const lookupGate = new Promise<void>((resolve) => {
@@ -111,6 +120,7 @@ test('late lookup and purchase cannot overwrite a different identifier', async (
   const purchaseGate = new Promise<void>((resolve) => {
     releasePurchase = resolve;
   });
+
   await page.route('**/order?*', async (route) => {
     if (route.request().url().includes('identifier=old')) {
       await lookupGate;
@@ -212,9 +222,12 @@ test('lookup debounces edits and recovers after a network error', async ({
   page,
 }) => {
   await setup(page);
+
   let calls = 0;
+
   await page.route('**/order?*', (route) => {
     calls++;
+
     return calls === 1
       ? route.abort()
       : route.fulfill({
@@ -232,6 +245,7 @@ test('lookup debounces edits and recovers after a network error', async ({
 for (const width of [320, 768, 1024, 1440]) {
   test(`page fits a ${width}px viewport`, async ({ page }, testInfo) => {
     const errors: string[] = [];
+
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
     await setup(page);
@@ -267,10 +281,12 @@ test('lookup started before submission cannot erase placed state', async ({
   page,
 }) => {
   await setup(page);
+
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
+
   await page.route('**/order?*', async (route) => {
     await gate;
     await route.fulfill({ json: available() });
@@ -330,19 +346,25 @@ for (const outcome of ['NOT_ORDERED', 'lost-response']) {
     page,
   }) => {
     await setup(page);
+
     const keys: string[] = [];
+
     await page.route('**/purchases', async (route) => {
       keys.push(route.request().postDataJSON().idempotencyKey);
+
       if (keys.length === 2)
         return route.fulfill({
           status: 429,
           json: { status: 'REJECTED', reason: 'busy' },
         });
+
       if (keys.length > 2)
         return route.fulfill({
           json: { status: 'PROCESSING', phase: 'queued' },
         });
+
       if (outcome === 'lost-response') return route.abort();
+
       return route.fulfill({
         status: 202,
         json: { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' },
@@ -385,7 +407,9 @@ test('fresh missing reservation clears PROCESSING and retries the original key',
   page,
 }) => {
   await setup(page);
+
   let missing = false;
+
   await page.route('**/order?*', (route) =>
     route.fulfill({
       json: available(
@@ -395,9 +419,12 @@ test('fresh missing reservation clears PROCESSING and retries the original key',
       ),
     }),
   );
+
   const keys: string[] = [];
+
   await page.route('**/purchases', (route) => {
     keys.push(route.request().postDataJSON().idempotencyKey);
+
     return route.fulfill({
       status: 202,
       json: { status: 'PROCESSING', phase: 'queued' },

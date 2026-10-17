@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from 'node:util';
+
 export const scenarios = [
   {
     name: 'no-oversell',
@@ -45,12 +46,14 @@ export const scenarios = [
     orderSlo: true,
   },
 ];
+
 export function inputs(scenario) {
   return Array.from({ length: scenario.requests }, (_, i) => ({
     identifier: `person-${i % scenario.identifiers}`,
     idempotencyKey: `request-${i}`,
   }));
 }
+
 export function allBusinessResponses(records, offered) {
   return (
     records.length === offered &&
@@ -63,8 +66,10 @@ export function allBusinessResponses(records, offered) {
     )
   );
 }
+
 function percentiles(values) {
   values.sort((a, b) => a - b);
+
   return Object.fromEntries(
     [50, 95, 99].map((p) => [
       `p${p}`,
@@ -72,20 +77,26 @@ function percentiles(values) {
     ]),
   );
 }
+
 export function summarize(records, offered, windowMs = 1000) {
   const dispatched = records.filter((r) => Number.isFinite(r.dispatchMs));
   const completed = records.filter((r) => Number.isFinite(r.completedMs));
   const reasons = [];
+
   if (
     records.length !== offered ||
     new Set(records.map((r) => r.index)).size !== offered
   )
     reasons.push('accounting_mismatch');
+
   if (dispatched.length !== offered) reasons.push('missing_dispatch');
+
   if (dispatched.some((r) => r.dispatchMs < 0 || r.dispatchMs >= windowMs))
     reasons.push('dispatch_outside_window');
+
   if (records.some((r) => r.scheduledMs < 0 || r.scheduledMs >= windowMs))
     reasons.push('schedule_outside_window');
+
   if (
     records.some(
       (r) =>
@@ -94,10 +105,13 @@ export function summarize(records, offered, windowMs = 1000) {
     )
   )
     reasons.push('invalid_timestamps');
+
   const outcomes = {};
+
   for (const r of records)
     outcomes[r.outcome ?? 'incomplete'] =
       (outcomes[r.outcome ?? 'incomplete'] ?? 0) + 1;
+
   return {
     validDispatch: reasons.length === 0,
     invalidReasons: reasons,
@@ -130,6 +144,7 @@ export function validateFinal(
 ) {
   const orderIdentifiers = new Set(orders.map((o) => o.user_identifier));
   const orderByIdentifier = new Map(orders.map((o) => [o.user_identifier, o]));
+
   return {
     noOversell: entries.length <= stock && orders.length <= stock,
     uniqueAllocations:
@@ -158,6 +173,7 @@ export function validateFinal(
 
 export function resourceSample(line) {
   const clean = stripVTControlCharacters(line).trim();
+
   return clean
     ? { sampledAt: new Date().toISOString(), ...JSON.parse(clean) }
     : null;
@@ -185,6 +201,7 @@ export function orderLatency(entries, observations) {
   const latencyMs = percentiles(
     values.filter((value) => Number.isFinite(value) && value >= 0),
   );
+
   return {
     latencyMs,
     maxMs: complete ? Math.max(...values) : null,

@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { cachedSaleConfigurations } from './configuration-cache.js';
+
 const sale = {
   id: 'sale',
   startsAt: '2030-01-01T00:00:00.000Z',
@@ -11,10 +12,13 @@ it('loads once on a cache miss and reads Redis without PostgreSQL on hits', asyn
   let raw = '';
   const sendCommand = vi.fn(async (args: string[]) => {
     if (args.length === 5) return ['0', raw];
+
     raw = args[6]!;
+
     return 1;
   });
   const load = vi.fn(async () => [sale]);
+
   expect(
     await cachedSaleConfigurations({ sendCommand }, 'database', load),
   ).toEqual([sale]);
@@ -33,6 +37,7 @@ it('retries a DB snapshot invalidated by concurrent sale configuration', async (
     .mockResolvedValueOnce(['1', ''])
     .mockResolvedValueOnce(1);
   const load = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([sale]);
+
   expect(
     await cachedSaleConfigurations({ sendCommand }, 'database', load),
   ).toEqual([sale]);
@@ -42,6 +47,7 @@ it('retries a DB snapshot invalidated by concurrent sale configuration', async (
 it('does not hide Redis errors with a database fallback or overwrite inventory', async () => {
   const load = vi.fn(async () => [sale]);
   const sendCommand = vi.fn().mockRejectedValue(new Error('Redis unavailable'));
+
   await expect(
     cachedSaleConfigurations({ sendCommand }, 'database', load),
   ).rejects.toThrow('Redis unavailable');
@@ -53,6 +59,7 @@ it('fails closed on corrupt metadata without falling back to PostgreSQL', async 
   const sendCommand = vi
     .fn()
     .mockResolvedValue(['0', '{"revision":"0","sales":[{}]}']);
+
   await expect(
     cachedSaleConfigurations({ sendCommand }, 'database', load),
   ).rejects.toThrow('Invalid configuration cache payload');

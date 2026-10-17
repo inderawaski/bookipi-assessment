@@ -8,19 +8,26 @@ import { cpus, release, totalmem } from 'node:os';
 // tracked report would change that SHA. Never amend after this final check.
 function capture(command, args) {
   const result = spawnSync(command, args, { encoding: 'utf8' });
+
   if (result.status !== 0)
     throw new Error(`${command} ${args.join(' ')} failed: ${result.stderr}`);
+
   return result.stdout.trim();
 }
+
 const commit = capture('git', ['rev-parse', 'HEAD']);
+
 if (capture('git', ['status', '--porcelain']))
   throw new Error('Commit all changes before the submission check');
+
 const output = resolve(
   'test-results/submission',
   commit,
   new Date().toISOString().replaceAll(':', '-'),
 );
+
 mkdirSync(output, { recursive: true });
+
 const report = {
   commit,
   tree: capture('git', ['rev-parse', 'HEAD^{tree}']),
@@ -51,13 +58,16 @@ const report = {
   steps: [],
   humanReview: 'pending',
 };
+
 function save() {
   writeFileSync(
     join(output, 'result.json'),
     JSON.stringify(report, null, 2) + '\n',
   );
 }
+
 save();
+
 const checks = [
   ['pnpm', ['typecheck']],
   ['pnpm', ['lint']],
@@ -94,14 +104,18 @@ const checks = [
   ],
   ['git', ['diff', '--check']],
 ];
+
 for (const [command, args] of checks) {
   const log = `${String(report.steps.length + 1).padStart(2, '0')}-${args[0].replaceAll(':', '-')}.log`;
+
   console.info(`Checking ${command} ${args.join(' ')} → ${join(output, log)}`);
+
   const startedAt = new Date().toISOString();
   const result = spawnSync(command, args, {
     encoding: 'utf8',
     maxBuffer: 128 * 1024 * 1024,
   });
+
   writeFileSync(
     join(output, log),
     `${result.stdout ?? ''}\n${result.stderr ?? ''}\n${result.error?.message ?? ''}`,
@@ -116,6 +130,7 @@ for (const [command, args] of checks) {
   });
   save(); // Retain failed checks and continue collecting independent evidence.
 }
+
 report.endedAt = new Date().toISOString();
 report.sourceUnchanged =
   capture('git', ['rev-parse', 'HEAD']) === commit &&
@@ -123,11 +138,14 @@ report.sourceUnchanged =
 report.automatedChecksPassed =
   report.sourceUnchanged && report.steps.every((step) => step.exitCode === 0);
 save();
+
 function hashes(directory, prefix = '') {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const relative = join(prefix, entry.name);
+
     if (entry.isDirectory())
       return hashes(join(directory, entry.name), relative);
+
     return [
       {
         path: relative,
@@ -138,6 +156,7 @@ function hashes(directory, prefix = '') {
     ];
   });
 }
+
 writeFileSync(
   join(output, 'manifest.json'),
   JSON.stringify(

@@ -1,16 +1,20 @@
 import { configurationRevisionKey } from './configuration-cache.js';
+
 export interface AdmissionConfiguration {
   id: string;
   startsAt: string;
   endsAt: string;
   initialStock: number;
 }
+
 interface RedisCommands {
   sendCommand(args: string[]): Promise<unknown>;
 }
+
 export function saleKey(id: string) {
   return `sale:{${Buffer.from(id).toString('hex')}}:admission`;
 }
+
 function values(sale: AdmissionConfiguration) {
   return [
     String(Date.parse(sale.startsAt)),
@@ -18,6 +22,7 @@ function values(sale: AdmissionConfiguration) {
     String(sale.initialStock),
   ];
 }
+
 const configure = `
 if redis.call('EXISTS', KEYS[1]) == 1 then
   if redis.call('HGET', KEYS[1], 'starts_at') ~= ARGV[1] or
@@ -38,6 +43,7 @@ redis.call('HSET', KEYS[1], 'configuration_version', '1')
 redis.call('INCR', KEYS[2])
 return 1
 `;
+
 export async function initializeAdmission(
   redis: RedisCommands,
   sale: AdmissionConfiguration,
@@ -51,6 +57,7 @@ export async function initializeAdmission(
     ...values(sale),
   ]);
 }
+
 export async function assertAdmissionConfiguration(
   redis: RedisCommands,
   sale: AdmissionConfiguration,
@@ -64,6 +71,7 @@ export async function assertAdmissionConfiguration(
     'remaining_stock',
   ]);
   const expected = values(sale);
+
   if (
     !Array.isArray(actual) ||
     expected.some((value, index) => actual[index] !== value) ||
@@ -90,14 +98,18 @@ export async function readAdmissionConfiguration(
     'initial_stock',
     'configuration_version',
   ]);
+
   if (!Array.isArray(fields) || fields.length !== 4)
     throw new Error('Invalid sale configuration reply');
+
   if (fields.every((value) => value === null)) return undefined;
+
   const [starts, ends, stock, version] = fields;
   const integer = (value: unknown) =>
     typeof value === 'string' &&
     /^(0|[1-9]\d*)$/.test(value) &&
     Number.isSafeInteger(Number(value));
+
   if (
     !integer(starts) ||
     !integer(ends) ||
@@ -108,6 +120,7 @@ export async function readAdmissionConfiguration(
     Number(ends) > 8640000000000000
   )
     throw new Error('Invalid cached sale configuration');
+
   return {
     id,
     startsAt: new Date(Number(starts)).toISOString(),

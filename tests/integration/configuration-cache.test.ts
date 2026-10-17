@@ -16,11 +16,15 @@ import { testServices } from '../services.js';
 it('loads immutable metadata on miss, invalidates on configuration and never recreates admission stock', async () => {
   const { database, redis } = testServices();
   const scope = randomUUID();
+
   try {
     await migrate(database);
     await redis.connect();
+
     const load = vi.fn(() => listSales(database));
+
     await cachedSaleConfigurations(redis, scope, load);
+
     const before = load.mock.calls.length;
     const sale = {
       id: randomUUID(),
@@ -28,6 +32,7 @@ it('loads immutable metadata on miss, invalidates on configuration and never rec
       endsAt: new Date(Date.now() + 120000).toISOString(),
       initialStock: 3,
     };
+
     await persistSale(database, sale);
     await initializeAdmission(redis, sale);
     expect(await cachedSaleConfigurations(redis, scope, load)).toContainEqual(
@@ -43,7 +48,9 @@ it('loads immutable metadata on miss, invalidates on configuration and never rec
     // An evicted metadata cache can be filled from DB after opening, without
     // reconstructing admission state, stock or its recovery epoch.
     await redis.del(saleKey(sale.id));
+
     const anotherScope = randomUUID();
+
     expect(
       await cachedSaleConfigurations(redis, anotherScope, () =>
         listSales(database),
@@ -52,20 +59,24 @@ it('loads immutable metadata on miss, invalidates on configuration and never rec
     expect(await redis.exists(saleKey(sale.id))).toBe(0);
   } finally {
     if (redis.isOpen) redis.destroy();
+
     await database.end();
   }
 });
 
 it('reads preloaded admission configuration without a metadata cache or database fallback', async () => {
   const { database, redis } = testServices();
+
   try {
     await redis.connect();
+
     const sale = {
       id: randomUUID(),
       startsAt: new Date(Date.now() + 60000).toISOString(),
       endsAt: new Date(Date.now() + 120000).toISOString(),
       initialStock: 3,
     };
+
     await initializeAdmission(redis, sale);
     await database.end();
     expect(await readAdmissionConfiguration(redis, sale.id)).toEqual(sale);
@@ -78,6 +89,7 @@ it('reads preloaded admission configuration without a metadata cache or database
     );
   } finally {
     if (redis.isOpen) redis.destroy();
+
     if (!database.ended) await database.end();
   }
 });

@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { persistOrder } from './orders.js';
 
 const admission = { saleId: 'sale', identifier: 'person', admittedAtMs: 1234 };
+
 function fixture({
   commitFails = false,
   timestamp = '1234',
@@ -13,10 +14,14 @@ function fixture({
   let inserted = false;
   const query = vi.fn(async (sql: string) => {
     if (sql === 'COMMIT' && commitFails) throw new Error('Lost commit reply');
+
     if (sql.startsWith('SELECT initial_stock'))
       return { rows: [{ initial_stock: stock }] };
+
     if (sql.startsWith('SELECT count')) return { rows: [{ count }] };
+
     if (sql.startsWith('INSERT')) inserted = true;
+
     return {
       rows:
         sql.startsWith('SELECT id') && (existing || inserted)
@@ -28,12 +33,17 @@ function fixture({
   const database = {
     connect: async () => ({ query, release }),
   } as unknown as Pool;
+
   return { database, query, release };
 }
+
 it('commits matching replay at full capacity without inserting or checking for spare stock', async () => {
   const f = fixture();
+
   expect(await persistOrder(f.database, admission)).toBe('durable-order');
+
   const commands = f.query.mock.calls.map((call) => call[0]);
+
   expect(commands).toContain(
     'SELECT initial_stock FROM flash_sale WHERE id = $1 FOR UPDATE',
   );
@@ -47,6 +57,7 @@ it('commits matching replay at full capacity without inserting or checking for s
 });
 it('rolls back conflicting identity metadata', async () => {
   const f = fixture({ timestamp: '1235' });
+
   await expect(persistOrder(f.database, admission)).rejects.toThrow(
     'Conflicting',
   );
@@ -56,11 +67,14 @@ it('rolls back conflicting identity metadata', async () => {
 });
 it('retains uncertainty on a lost commit reply and resolves redelivery through existing identity', async () => {
   const f = fixture({ commitFails: true, existing: false, count: 0 });
+
   await expect(persistOrder(f.database, admission)).rejects.toThrow(
     'Lost commit',
   );
   expect(f.release).toHaveBeenCalledWith(true);
+
   const retry = fixture();
+
   expect(await persistOrder(retry.database, admission)).toBe('durable-order');
   expect(retry.query.mock.calls.some(([sql]) => sql.startsWith('INSERT'))).toBe(
     false,
@@ -70,6 +84,7 @@ it.each([0, 1])(
   'refuses a new order when committed count reaches stock %s',
   async (stock) => {
     const f = fixture({ existing: false, stock, count: stock });
+
     await expect(persistOrder(f.database, admission)).rejects.toThrow(
       'capacity exhausted',
     );
@@ -81,8 +96,11 @@ it.each([0, 1])(
 );
 it('inserts a new order below capacity after acquiring the sale lock', async () => {
   const f = fixture({ existing: false, count: 0 });
+
   expect(await persistOrder(f.database, admission)).toBe('durable-order');
+
   const commands = f.query.mock.calls.map(([sql]) => sql);
+
   expect(
     commands.indexOf(
       'SELECT initial_stock FROM flash_sale WHERE id = $1 FOR UPDATE',

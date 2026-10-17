@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { PoolMeasurements } from './pool-metrics.js';
+
 it('records cumulative duration buckets, maxima, active peak and acquisition expiry', () => {
   const values = new Map<string, number>();
   const metrics = {
@@ -15,6 +16,7 @@ it('records cumulative duration buckets, maxima, active peak and acquisition exp
     },
   };
   const measurement = new PoolMeasurements(metrics);
+
   measurement.duration('lease', 0.001);
   measurement.duration('lease', 0.003);
   measurement.acquire();

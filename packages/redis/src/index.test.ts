@@ -1,10 +1,12 @@
 import { it, expect } from 'vitest';
 import { assertRedisSafety } from './index.js';
+
 const safe = {
   appendonly: 'yes',
   appendfsync: 'everysec',
   'maxmemory-policy': 'noeviction',
 };
+
 for (const [key, value] of [
   ['appendonly', 'no'],
   ['appendfsync', 'no'],
@@ -18,6 +20,7 @@ for (const [key, value] of [
     ).rejects.toThrow('Redis requires');
   });
 }
+
 it('accepts the supported persistence configuration', async () => {
   await expect(
     assertRedisSafety({ configGet: async () => safe }),
@@ -31,6 +34,7 @@ it('checks AOF write health through the control-plane health check', async () =>
     appendfsync: 'everysec',
     'maxmemory-policy': 'noeviction',
   });
+
   await expect(
     assertRedisHealth({
       configGet,

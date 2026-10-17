@@ -6,6 +6,7 @@ export function admissionKeys(
   saleId: string,
 ): [string, string, string, string, string] {
   const prefix = saleKey(saleId);
+
   return [
     prefix,
     `${prefix}:identifiers`,
@@ -14,11 +15,13 @@ export function admissionKeys(
     `${prefix}:stream`,
   ];
 }
+
 export interface Reservation {
   requestKey: string;
   admittedAtMs: number;
   streamId: string;
 }
+
 /** A primary-memory acknowledgement; it may be lost before persistence/replication. */
 export type AdmissionResult =
   | { status: 'reserved'; reservation: Reservation; replay: boolean }
@@ -27,11 +30,13 @@ export type AdmissionResult =
       status: 'rejected';
       reason: 'upcoming' | 'ended' | 'sold_out' | 'idempotency_conflict';
     };
+
 export class AdmissionUncertainError extends Error {
   constructor(cause: unknown) {
     super('Admission outcome uncertain; reconcile before resolving', { cause });
   }
 }
+
 /** @internal Volatile evidence only. Public placement and workers must use RedisAdmission. */
 export async function admitPurchase(
   redis: { sendCommand(args: string[]): Promise<unknown> },
@@ -39,8 +44,10 @@ export async function admitPurchase(
   input: PurchaseInput,
 ): Promise<AdmissionResult> {
   const payload = normalizePurchase(saleId, input);
+
   try {
     const result = await redis.sendCommand(purchaseCommand(payload));
+
     return parseAdmissionReply(result);
   } catch (cause) {
     // Even a timeout can mean the script committed. Never guess a business rejection.
@@ -52,7 +59,9 @@ export async function admitPurchase(
 export function parseAdmissionReply(result: unknown): AdmissionResult {
   try {
     if (!Array.isArray(result)) throw new Error('Invalid admission result');
+
     const [status, key, timestamp, streamId, kind] = result;
+
     if (
       status === 'rejected' &&
       ['upcoming', 'ended', 'sold_out', 'idempotency_conflict'].includes(key)
@@ -63,6 +72,7 @@ export function parseAdmissionReply(result: unknown): AdmissionResult {
           'upcoming' | 'ended' | 'sold_out' | 'idempotency_conflict',
       };
     }
+
     if (
       (status !== 'reserved' && status !== 'already_placed') ||
       typeof key !== 'string' ||
@@ -74,11 +84,13 @@ export function parseAdmissionReply(result: unknown): AdmissionResult {
       (status === 'reserved' && kind !== 'new' && kind !== 'replay')
     )
       throw new Error('Invalid admission result');
+
     const reservation = {
       requestKey: key,
       admittedAtMs: Number(timestamp),
       streamId,
     };
+
     return status === 'reserved'
       ? { status, reservation, replay: kind === 'replay' }
       : { status, reservation };
@@ -86,6 +98,7 @@ export function parseAdmissionReply(result: unknown): AdmissionResult {
     throw new AdmissionUncertainError(cause);
   }
 }
+
 export function purchaseCommand(
   payload: PurchaseInput & { saleId: string },
 ): string[] {

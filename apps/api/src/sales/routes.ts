@@ -38,6 +38,7 @@ export function registerSaleRoutes(
   },
 ) {
   const { database, redis, admission, probe, webOrigin } = dependencies;
+
   app.addHook('onSend', async (request, _reply, payload) => {
     if (
       request.method === 'POST' &&
@@ -71,8 +72,10 @@ export function registerSaleRoutes(
               : result.status === 'PROCESSING' || result.status === 'SUCCESS'
                 ? 'admitted'
                 : 'other';
+
       dependencies.metrics?.add(`purchase_${outcome}_total`);
     }
+
     return payload;
   });
   app.addHook('onRequest', async (request, reply) => {
@@ -83,10 +86,12 @@ export function registerSaleRoutes(
       return reply
         .code(414)
         .send({ status: 'REJECTED', reason: 'invalid_input' });
+
     if (webOrigin && request.headers.origin === webOrigin) {
       reply
         .header('Access-Control-Allow-Origin', webOrigin)
         .header('Vary', 'Origin');
+
       if (request.method === 'OPTIONS')
         return reply
           .header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -104,21 +109,27 @@ export function registerSaleRoutes(
         : failure.statusCode === 400 || failure.validation
           ? 400
           : 503;
+
     return reply.code(code).send({
       status: 'REJECTED',
       reason: code === 503 ? 'unavailable' : 'invalid_input',
     });
   });
+
   const unavailable = { status: 'UNAVAILABLE', reason: 'unavailable' } as const;
   const rejected = (reason: 'invalid_input' | 'not_found') =>
     ({ status: 'REJECTED', reason }) as const;
+
   async function sale(id: string) {
     const preloaded = await readAdmissionConfiguration(redis, id);
+
     if (preloaded) return preloaded;
+
     const scope = dependencies.configurationScope;
     const load = () => listSales(database);
     const cached = await cachedSaleConfigurations(redis, scope, load);
     const found = cached.find((value) => value.id === id);
+
     // An absent ID is a cache miss too (e.g. DB configuration not initialized yet).
     return (
       found ??
@@ -127,6 +138,7 @@ export function registerSaleRoutes(
       )
     );
   }
+
   async function committed(
     id: string,
     identifier: string,
@@ -135,24 +147,31 @@ export function registerSaleRoutes(
       'SELECT id FROM "order" WHERE flash_sale_id = $1 AND user_identifier = $2',
       [id, identifier],
     );
+
     return result.rows[0]
       ? { status: 'SUCCESS', orderId: result.rows[0].id }
       : undefined;
   }
+
   async function allocated(
     id: string,
     identifier: string,
   ): Promise<OrderState> {
     await probe();
+
     const confirmation = await admission.lookup(id, identifier);
+
     if (confirmation.status !== 'present') {
       // This is an observation, not proof that a delayed purchase cannot execute later.
       if (confirmation.diagnostic === 'missing_without_absence_proof')
         return { status: 'NOT_ORDERED' };
+
       if (await redis.hGet(`${saleKey(id)}:identifiers`, identifier))
         return { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' };
+
       throw new Error('Lookup unavailable');
     }
+
     const retry = await redis.hGet(
       `${saleKey(id)}:retries`,
       confirmation.reservation.streamId,
@@ -161,11 +180,13 @@ export function registerSaleRoutes(
       `${saleKey(id)}:quarantine`,
       confirmation.reservation.streamId,
     );
+
     return {
       status: 'PROCESSING',
       phase: retry || quarantined ? 'delayed' : 'queued',
     };
   }
+
   app.get<{ Params: { saleId: string } }>(
     saleRoutes.status,
     {
@@ -176,24 +197,32 @@ export function registerSaleRoutes(
     },
     async (request, reply) => {
       let id: string;
+
       try {
         id = normalizeIdentifier(request.params.saleId);
       } catch {
         return reply.code(400).send(rejected('invalid_input'));
       }
+
       try {
         const config = await sale(id);
+
         if (!config) return reply.code(404).send(rejected('not_found'));
+
         await probe();
+
         const stock = await redis.hGet(saleKey(id), 'remaining_stock');
         const remainingStock = stock === null ? NaN : Number(stock);
+
         if (
           !Number.isInteger(remainingStock) ||
           remainingStock < 0 ||
           remainingStock > config.initialStock
         )
           throw new Error('Invalid stock');
+
         const now = Date.now();
+
         return {
           saleId: id,
           startsAt: config.startsAt,
@@ -225,17 +254,22 @@ export function registerSaleRoutes(
     },
     async (request, reply) => {
       let id: string, identifier: string;
+
       try {
         id = normalizeIdentifier(request.params.saleId);
         identifier = normalizeIdentifier(request.query.identifier);
       } catch {
         return reply.code(400).send(rejected('invalid_input'));
       }
+
       try {
         const order = await committed(id, identifier);
+
         if (order) return { status: 'AVAILABLE', order };
+
         if (!(await sale(id)))
           return reply.code(404).send(rejected('not_found'));
+
         return { status: 'AVAILABLE', order: await allocated(id, identifier) };
       } catch {
         return reply.code(503).send(unavailable);
@@ -253,11 +287,13 @@ export function registerSaleRoutes(
     },
     async (request, reply) => {
       let payload;
+
       try {
         payload = normalizePurchase(request.params.saleId, request.body);
       } catch {
         return reply.code(400).send(rejected('invalid_input'));
       }
+
       // Configuration, sale window, stock and restart/fault fences are checked by
       // Redis Lua. PostgreSQL and reconciliation probes stay off the admission path.
       let result: PurchaseResponse = await admission.place(
@@ -272,6 +308,7 @@ export function registerSaleRoutes(
             : result.status === 'PROCESSING' && result.phase === 'confirming'
               ? 'uncertain'
               : 'admitted';
+
       request.log.info(
         {
           requestKeyHash: correlation(payload.idempotencyKey),
@@ -282,9 +319,11 @@ export function registerSaleRoutes(
         },
         'Purchase admission',
       );
+
       // Keep internal command-outcome uncertainty; expose the agreed retryable public state.
       if (result.status === 'PROCESSING' && result.phase === 'confirming')
         result = { status: 'NOT_ORDERED', reason: 'confirmation_uncertain' };
+
       if (
         result.status === 'REJECTED' &&
         result.reason === 'already_placed' &&
@@ -299,6 +338,7 @@ export function registerSaleRoutes(
           },
         };
       }
+
       return reply.code(purchaseHttpStatus(result)).send(result);
     },
   );

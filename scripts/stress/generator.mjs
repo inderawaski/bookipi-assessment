@@ -20,14 +20,17 @@ export async function burst(
   } = {},
 ) {
   const url = new URL(baseUrl);
+
   if (url.protocol !== 'http:')
     throw new Error('Isolated harness requires HTTP');
+
   if (
     !Number.isInteger(connections) ||
     connections < 1 ||
     connections > scenario.requests
   )
     throw new Error('Connections must be between 1 and offered requests');
+
   const sockets = [];
   const agent = new http.Agent({
     keepAlive: true,
@@ -42,6 +45,7 @@ export async function burst(
   const loop = monitorEventLoopDelay({ resolution: 10 });
   const cpu = process.cpuUsage();
   const started = performance.now();
+
   try {
     // All TCP handshakes finish before the measured window. No warmup purchases.
     for (let i = 0; i < connections; i += 256) {
@@ -54,6 +58,7 @@ export async function burst(
                 host: url.hostname,
                 port: Number(url.port || 80),
               });
+
               sockets.push(socket);
               socket.setTimeout(timeoutMs, () =>
                 socket.destroy(new Error('Preconnect timeout')),
@@ -68,31 +73,45 @@ export async function burst(
         ),
       );
     }
+
     let next = 0;
+
     agent.createConnection = (_options, callback) => {
       const socket = sockets[next++];
+
       if (!socket || socket.destroyed) {
         callback(new Error('Preallocated socket unavailable'));
+
         return;
       }
+
       return socket;
     };
+
     const preconnectedAt = performance.now();
+
     await beforeDispatch?.();
     loop.enable();
+
     const epoch = performance.now();
+
     onDispatch?.();
+
     const tasks = [];
     let cursor = 0;
+
     while (cursor < records.length) {
       const now = performance.now() - epoch;
+
       while (cursor < records.length && records[cursor].scheduledMs <= now) {
         const record = records[cursor++];
+
         tasks.push(
           new Promise((resolve) => {
             let settled = false;
             const finish = (outcome) => {
               if (settled) return;
+
               settled = true;
               record.outcome = outcome;
               resolve();
@@ -110,6 +129,7 @@ export async function burst(
               },
               (response) => {
                 let data = '';
+
                 response.setEncoding('utf8');
                 response.on('data', (chunk) => {
                   data += chunk;
@@ -118,6 +138,7 @@ export async function burst(
                 response.on('end', () => {
                   record.completedMs = performance.now() - epoch;
                   record.httpStatus = response.statusCode;
+
                   try {
                     record.response = JSON.parse(data);
                     finish(
@@ -139,6 +160,7 @@ export async function burst(
               finish('transport_error');
               request.destroy(new Error('Request deadline'));
             }, timeoutMs);
+
             request.once('close', () => clearTimeout(timer));
             request.once('finish', () => {
               record.dispatchMs = performance.now() - epoch;
@@ -153,9 +175,12 @@ export async function burst(
           }),
         );
       }
+
       if (cursor < records.length) await delay(1);
     }
+
     await Promise.all(tasks);
+
     return {
       ...summarize(records, scenario.requests, dispatchWindowMs),
       records,
@@ -186,10 +211,12 @@ export async function burst(
         memory: process.memoryUsage(),
       },
     };
+
     throw error;
   } finally {
     loop.disable();
     agent.destroy();
+
     for (const socket of sockets) socket.destroy();
   }
 }

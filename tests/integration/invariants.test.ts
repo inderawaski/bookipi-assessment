@@ -23,9 +23,11 @@ it('accounts independently for acknowledged admissions across two APIs and worke
   const gates = apps.map(() => new RedisAdmission(process.env.TEST_REDIS_URL!));
   const stops: (() => Promise<void>)[] = [];
   const errors: string[] = [];
+
   try {
     await redis.connect();
     await migrate(database);
+
     const clock = (await redis.sendCommand(['TIME'])) as string[];
     const now = Number(clock[0]) * 1000 + Math.floor(Number(clock[1]) / 1000);
     const sale = {
@@ -34,6 +36,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
       endsAt: new Date(now + 12000).toISOString(),
       initialStock: 8,
     };
+
     await persistSale(database, sale);
     await initializeAdmission(redis, sale);
     await gates[0]!.recover(sale, []);
@@ -48,6 +51,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
         },
       }),
     );
+
     const post = async (
       i: number,
       identifier: string,
@@ -61,6 +65,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
           payload: { identifier, idempotencyKey: key },
         })
       ).json();
+
     expect(await post(0, 'person', 'unknown', randomUUID())).toEqual({
       status: 'NOT_ORDERED',
       reason: 'confirmation_uncertain',
@@ -70,6 +75,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
       .poll(
         async () => {
           const t = (await redis.sendCommand(['TIME'])) as string[];
+
           return (
             Number(t[0]) * 1000 + Math.floor(Number(t[1]) / 1000) >=
             Date.parse(sale.startsAt)
@@ -78,8 +84,10 @@ it('accounts independently for acknowledged admissions across two APIs and worke
         { timeout: 6000, interval: 25 },
       )
       .toBe(true);
+
     // Client/API time can disagree; admission still uses Redis TIME.
     const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 86400000);
+
     try {
       expect(await post(0, ' First ', 'first')).toEqual({
         status: 'PROCESSING',
@@ -88,11 +96,13 @@ it('accounts independently for acknowledged admissions across two APIs and worke
     } finally {
       spy.mockRestore();
     }
+
     // Sequential primary acknowledgements establish an authoritative prefix before contention.
     expect(await post(1, 'second', 'second')).toEqual({
       status: 'PROCESSING',
       phase: 'queued',
     });
+
     const inputs = Array.from({ length: 24 }, (_, i) => ({
       identifier: ` Person-${i % 12} `,
       key: `request-${i}`,
@@ -101,13 +111,16 @@ it('accounts independently for acknowledged admissions across two APIs and worke
       inputs.map((input, i) => post(i, input.identifier, input.key)),
     );
     const acknowledged = new Set(['first', 'second']);
+
     responses.forEach((response, i) => {
       if (response.status === 'PROCESSING' && response.phase === 'queued')
         acknowledged.add(inputs[i]!.identifier.trim().toLowerCase());
     });
+
     const keys = admissionKeys(sale.id);
     const entries = (await redis.xRange(keys[4], '-', '+'))!;
     const allocations = await redis.hGetAll(keys[1]);
+
     expect(entries.length).toBeLessThanOrEqual(sale.initialStock);
     expect(entries).toHaveLength(sale.initialStock);
     expect(new Set(entries.map((e) => e.message.identifier)).size).toBe(
@@ -124,8 +137,10 @@ it('accounts independently for acknowledged admissions across two APIs and worke
       'first',
       'second',
     ]);
+
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]!;
+
       expect(allocations[entry.message.identifier!]).toBe(
         entry.message.request_key,
       );
@@ -135,16 +150,19 @@ it('accounts independently for acknowledged admissions across two APIs and worke
       expect(Number(entry.message.admitted_at_ms)).toBeLessThan(
         Date.parse(sale.endsAt),
       );
+
       if (i) {
         const previous = entries[i - 1]!;
         const [ms, seq] = entry.id.split('-').map(BigInt);
         const [prevMs, prevSeq] = previous.id.split('-').map(BigInt);
+
         expect(ms! > prevMs! || (ms === prevMs && seq! > prevSeq!)).toBe(true);
         expect(Number(entry.message.admitted_at_ms)).toBeGreaterThanOrEqual(
           Number(previous.message.admitted_at_ms),
         );
       }
     }
+
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe(
       String(sale.initialStock - entries.length),
     );
@@ -155,6 +173,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
       .poll(
         async () => {
           const t = (await redis.sendCommand(['TIME'])) as string[];
+
           return (
             Number(t[0]) * 1000 + Math.floor(Number(t[1]) / 1000) >=
             Date.parse(sale.endsAt)
@@ -171,6 +190,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
       status: 'REJECTED',
       reason: 'ended',
     });
+
     for (const gate of gates)
       stops.push(
         await createOrderConsumer(
@@ -181,6 +201,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
           (error) => errors.push(String(error)),
         ),
       );
+
     await expect
       .poll(
         async () => {
@@ -189,6 +210,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
             [sale.id],
           );
           const pending = await redis.xPending(keys[4], orderGroup);
+
           return {
             identifiers: rows.rows.map((r) => r.user_identifier).sort(),
             pending: pending.pending,
@@ -202,18 +224,23 @@ it('accounts independently for acknowledged admissions across two APIs and worke
         pending: 0,
         errors: [],
       });
+
     while (stops.length) await stops.pop()!();
+
     const rows = await database.query(
       'SELECT id, user_identifier, admitted_at FROM "order" WHERE flash_sale_id=$1',
       [sale.id],
     );
+
     expect(new Set(rows.rows.map((r) => r.id)).size).toBe(entries.length);
+
     for (const entry of entries)
       expect(
         rows.rows
           .find((r) => r.user_identifier === entry.message.identifier)
           ?.admitted_at.getTime(),
       ).toBe(Number(entry.message.admitted_at_ms));
+
     // Reconcile completed work and start a fresh worker; no replenishment or extra orders.
     await gates[0]!.recover(
       sale,
@@ -258,10 +285,14 @@ it('accounts independently for acknowledged admissions across two APIs and worke
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
   } finally {
     vi.restoreAllMocks();
+
     while (stops.length) await stops.pop()!();
+
     gates.forEach((gate) => gate.close());
     await Promise.all(apps.map((app) => app.close()));
+
     if (redis.isOpen) redis.destroy();
+
     await database.end();
   }
 }, 60000);

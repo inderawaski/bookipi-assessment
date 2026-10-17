@@ -1,16 +1,20 @@
 import { saleKey } from './configuration.js';
 import type { createRedisConnection } from '../index.js';
+
 type Connection = ReturnType<typeof createRedisConnection>;
+
 export interface RetryPolicy {
   maxAttempts: number;
   baseMs: number;
   maxMs: number;
 }
+
 export const defaultRetryPolicy: RetryPolicy = {
   maxAttempts: 5,
   baseMs: 1000,
   maxMs: 60000,
 };
+
 export function retryDelay(
   policy: RetryPolicy,
   attempt: number,
@@ -20,8 +24,10 @@ export function retryDelay(
     policy.maxMs,
     policy.baseMs * 2 ** Math.min(attempt - 1, 30),
   );
+
   return Math.max(1, Math.floor(ceiling / 2 + (random * ceiling) / 2));
 }
+
 const claim = `
 local raw = redis.call('HGET', KEYS[1], ARGV[1])
 local state = raw and cjson.decode(raw) or {attempts=0, nextAt=0, version=1}
@@ -36,6 +42,7 @@ redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(state))
 redis.call('ZADD', KEYS[2], state.nextAt, ARGV[1])
 return state.attempts
 `;
+
 export async function claimAttempt(
   redis: Connection,
   saleId: string,
@@ -55,8 +62,10 @@ export async function claimAttempt(
       '60000',
     ]),
   );
+
   return attempt;
 }
+
 export async function delayAttempt(
   redis: Connection,
   saleId: string,
@@ -73,6 +82,7 @@ state.nextAt = now+tonumber(ARGV[3]); state.reason = 'dependency_unavailable'
 redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(state))
 redis.call('ZADD', KEYS[2], state.nextAt, ARGV[1]); return 1`;
   const prefix = saleKey(saleId);
+
   await redis.sendCommand([
     'EVAL',
     script,
@@ -84,6 +94,7 @@ redis.call('ZADD', KEYS[2], state.nextAt, ARGV[1]); return 1`;
     String(retryDelay(policy, attempt)),
   ]);
 }
+
 /** Only exhausted work can be rearmed. Concurrent/repeated replay cannot reset an active budget. */
 export async function replayOrder(
   redis: Connection,
@@ -111,6 +122,7 @@ redis.call('HSET', KEYS[1], ARGV[1], cjson.encode(state)); redis.call('ZADD', KE
     prefix,
     id,
   ]);
+
   return Number(result);
 }
 
@@ -121,6 +133,7 @@ export async function finishAttempt(
   attempt: number,
 ) {
   const prefix = saleKey(saleId);
+
   await redis.sendCommand([
     'EVAL',
     `

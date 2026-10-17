@@ -25,12 +25,14 @@ import { waitForRedisTime, pollStatus } from './support.mjs';
 import { waitForReadiness } from './readiness.mjs';
 
 const scenario = scenarios.find((s) => s.name === process.argv[2]);
+
 if (
   !scenario ||
   !/^flash-test-[0-9a-f-]{36}$/.test(process.env.TEST_PROJECT ?? '') ||
   new URL(process.env.TEST_DATABASE_URL).pathname !== '/flash_test'
 )
   throw new Error('Use pnpm test:stress for isolated test data');
+
 const database = createDatabase(process.env.TEST_DATABASE_URL, 2, 5000);
 const redis = createRedisConnection(
   process.env.TEST_REDIS_URL,
@@ -53,6 +55,7 @@ const artifact = {
   },
   startedAt: new Date().toISOString(),
 };
+
 async function observeOrders(saleId) {
   const rows = (
     await database.query(
@@ -62,24 +65,31 @@ async function observeOrders(saleId) {
       [saleId],
     )
   ).rows;
+
   for (const row of rows)
     observedOrders[row.user_identifier] ??= Number(row.observed_ms);
 }
+
 async function metrics(base) {
   const response = await fetch(`${base}/metrics`, {
     signal: AbortSignal.timeout(5000),
   });
+
   if (!response.ok) throw new Error('Metrics unavailable');
+
   return response.text();
 }
+
 let stopPolling;
 let stopObserving = false;
 let observer;
 const observedOrders = {};
+
 try {
   await redis.connect();
   await assertRedisSafety(redis);
   await migrate(database);
+
   const clock = await redis.sendCommand(['TIME']);
   const now = Number(clock[0]) * 1000 + Math.floor(Number(clock[1]) / 1000);
   const sale = await persistSale(database, {
@@ -88,10 +98,12 @@ try {
     endsAt: new Date(now + 3600000).toISOString(),
     initialStock: scenario.stock,
   });
+
   artifact.sale = sale;
   await initializeAdmission(redis, sale);
   // Discover the new sale on every replica before starting the dispatch clock.
   artifact.readinessAttempts = [];
+
   const apiEndpoints = JSON.parse(
     process.env.STRESS_API_ENDPOINTS ||
       JSON.stringify([process.env.STRESS_API]),
@@ -100,6 +112,7 @@ try {
     process.env.STRESS_WORKER_ENDPOINTS ||
       JSON.stringify([process.env.STRESS_WORKER]),
   );
+
   await waitForReadiness([...apiEndpoints, ...workerEndpoints], {
     onAttempt: (attempt) => artifact.readinessAttempts.push(attempt),
   });
@@ -111,6 +124,7 @@ try {
     worker: await metrics(process.env.STRESS_WORKER),
   };
   artifact.polls = [];
+
   const settings = {
     ...artifact.settings,
     beforeDispatch: async () => {
@@ -121,6 +135,7 @@ try {
     },
     onDispatch: () => {
       artifact.dispatchStartedAt = new Date().toISOString();
+
       if (scenario.orderSlo || scenario.measureOrders)
         observer = (async () => {
           while (!stopObserving) {
@@ -130,19 +145,24 @@ try {
         })().catch((error) => {
           artifact.observationError = String(error);
         });
+
       stopPolling = pollStatus(process.env.STRESS_API, sale.id, artifact.polls);
     },
   };
+
   artifact.burst = await burst(
     process.env.STRESS_API,
     sale.id,
     scenario,
     settings,
   );
+
   const drainStarted = performance.now();
   const keys = admissionKeys(sale.id);
   let entries, allocations, orders, pending;
+
   artifact.drainSamples = [];
+
   do {
     entries = await redis.xRange(keys[4], '-', '+');
     allocations = await redis.hGetAll(keys[1]);
@@ -152,22 +172,29 @@ try {
         [sale.id],
       )
     ).rows;
+
     try {
       pending = (await redis.xPending(keys[4], 'orders')).pending;
     } catch (error) {
       if (!error.message.includes('NOGROUP')) throw error;
+
       pending = entries.length;
     }
+
     artifact.drainSamples.push({
       elapsedMs: performance.now() - drainStarted,
       admissions: entries.length,
       orders: orders.length,
       pending,
     });
+
     if (orders.length === entries.length && pending === 0) break;
+
     await delay(100);
   } while (performance.now() - drainStarted < artifact.settings.drainTimeoutMs);
+
   artifact.queueDrainMs = performance.now() - drainStarted;
+
   const stockValue = await redis.hGet(keys[0], 'remaining_stock');
   const remainingStock = stockValue === null ? NaN : Number(stockValue);
   const acknowledged = new Set(
@@ -181,6 +208,7 @@ try {
       .map((r) => r.input.identifier),
   );
   const final = { entries, allocations, orders, pending, remainingStock };
+
   artifact.final = {
     ...final,
     invariants: {
@@ -188,6 +216,7 @@ try {
       admissionsWithinWindow: admissionsWithinWindow(entries, sale),
     },
   };
+
   if (scenario.orderSlo || scenario.measureOrders) {
     stopObserving = true;
     await observer;
@@ -196,6 +225,7 @@ try {
       observedOrders,
       ...orderLatency(entries, observedOrders),
     };
+
     if (scenario.orderSlo)
       Object.assign(
         artifact.final.invariants,
@@ -203,12 +233,15 @@ try {
         { orderObserverHealthy: !artifact.observationError },
       );
   }
+
   if (scenario.expectFill)
     artifact.final.invariants.filled =
       orders.length === Math.min(scenario.stock, scenario.identifiers);
+
   if (scenario.orderSlo)
     artifact.final.invariants.allRequestsHaveBusinessResponses =
       allBusinessResponses(artifact.burst.records, scenario.requests);
+
   artifact.apiReplicaMetricsAfter = await Promise.all(
     JSON.parse(process.env.STRESS_API_ENDPOINTS || '[]').map(metrics),
   );
@@ -223,9 +256,11 @@ try {
   artifact.passed =
     artifact.burst.validDispatch &&
     Object.values(artifact.final.invariants).every(Boolean);
+
   if (!artifact.passed) process.exitCode = 1;
 } catch (error) {
   if (error.measurement) artifact.burst = error.measurement;
+
   artifact.error = error.stack;
   artifact.runStatus = error.measurement
     ? 'invalid_generator'
@@ -236,9 +271,14 @@ try {
   process.exitCode = 1;
 } finally {
   stopObserving = true;
+
   if (observer) await observer;
+
   if (stopPolling) await stopPolling();
+
   writeFileSync(`${output}/result.json`, JSON.stringify(artifact, null, 2));
+
   if (redis.isOpen) redis.destroy();
+
   await database.end();
 }

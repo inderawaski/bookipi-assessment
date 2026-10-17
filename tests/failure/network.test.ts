@@ -36,25 +36,32 @@ async function loseReply(url: string, command: string, partition = false) {
   let dropped = false;
   const server = createServer((client) => {
     const upstream = createConnection(target);
+
     sockets.add(client);
     sockets.add(upstream);
+
     let armed = false;
     let tail = Buffer.alloc(0);
+
     client.on('data', (data) => {
       const chunk = Buffer.concat([tail, data]);
+
       if (chunk.includes(marker)) armed = true;
+
       tail = chunk.subarray(Math.max(0, chunk.length - marker.length + 1));
       upstream.write(data);
     });
     upstream.on('data', (data) => {
       if (armed) {
         dropped = true;
+
         if (!partition) {
           client.destroy();
           upstream.destroy();
         }
       } else client.write(data);
     });
+
     for (const socket of [client, upstream]) {
       socket.on('error', () => {
         client.destroy();
@@ -63,14 +70,17 @@ async function loseReply(url: string, command: string, partition = false) {
       socket.on('close', () => sockets.delete(socket));
     }
   });
+
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   endpoint.hostname = '127.0.0.1';
   endpoint.port = String((server.address() as { port: number }).port);
+
   return {
     url: endpoint.href,
     dropped: () => dropped,
     close: async () => {
       for (const socket of sockets) socket.destroy();
+
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
@@ -80,7 +90,9 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
   '%s preserves uncertain work and converges',
   async (scenario) => {
     const { database, redis } = testServices();
+
     await redis.connect();
+
     const sale = {
       id: randomUUID(),
       startsAt: new Date(Date.now() + 2000).toISOString(),
@@ -91,6 +103,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
       gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
     let proxy: Awaited<ReturnType<typeof loseReply>> | undefined;
     let uncertainDatabase: ReturnType<typeof createDatabase> | undefined;
+
     try {
       await migrate(database);
       await persistSale(database, sale);
@@ -100,6 +113,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
         .poll(
           async () => {
             const time = (await redis.sendCommand(['TIME'])) as string[];
+
             return (
               Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >=
               Date.parse(sale.startsAt)
@@ -108,13 +122,16 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
           { timeout: 5000, interval: 25 },
         )
         .toBe(true);
+
       if (scenario.startsWith('redis_')) {
         proxy = await loseReply(
           process.env.TEST_REDIS_URL!,
           'EVAL',
           scenario === 'redis_partition',
         );
+
         const uncertain = new RedisAdmission(proxy.url, 1, 2000);
+
         expect(
           await uncertain.place(sale.id, {
             identifier: 'person',
@@ -124,6 +141,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
         uncertain.close();
         expect(proxy.dropped()).toBe(true);
       }
+
       expect(
         await gate.place(sale.id, {
           identifier: 'person',
@@ -131,10 +149,12 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
         }),
       ).toEqual({ status: 'PROCESSING', phase: 'queued' });
       await redis.xGroupCreate(keys[4], orderGroup, '0');
+
       const entry = (await redis.xReadGroup(orderGroup, 'network', {
         key: keys[4],
         id: '>',
       }))![0]!.messages[0]!;
+
       if (scenario === 'commit_reply') {
         proxy = await loseReply(process.env.TEST_DATABASE_URL!, 'COMMIT');
         uncertainDatabase = createDatabase(proxy.url, 1, 1000);
@@ -156,6 +176,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
         ).toBe(1);
         expect(await redis.hGet(`${keys[0]}:completed`, 'person')).toBeNull();
       }
+
       if (scenario === 'postgres_restart') {
         const docker = (...args: string[]) =>
           execFileSync(
@@ -170,6 +191,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
             ],
             { stdio: 'pipe', timeout: 30000 },
           );
+
         docker('kill', '-s', 'SIGKILL', 'postgres');
         await expect(
           processOrder(database, redis, gate, sale.id, entry),
@@ -177,12 +199,15 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
         expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
         docker('up', '-d', '--wait', 'postgres');
       }
+
       await processOrder(database, redis, gate, sale.id, entry);
       await processOrder(database, redis, gate, sale.id, entry);
+
       const orders = await database.query(
         'SELECT id, user_identifier FROM "order" WHERE flash_sale_id=$1',
         [sale.id],
       );
+
       expect(orders.rows.map((r) => r.user_identifier)).toEqual(['person']);
       expect(await redis.hLen(keys[3])).toBe(1);
       expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
@@ -197,7 +222,9 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
         }),
       ).toEqual({ status: 'REJECTED', reason: 'sold_out' });
       expect((await gate.lookup(sale.id, 'missing')).status).toBe('confirming');
+
       const directory = `test-results/failure/${process.env.TEST_PROJECT}`;
+
       await mkdir(directory, { recursive: true });
       await writeFile(
         `${directory}/${scenario}.json`,

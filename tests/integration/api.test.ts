@@ -16,7 +16,9 @@ import { testServices } from '../services.js';
 
 it('exposes real admission, normalization, retries, delayed state and committed orders', async () => {
   const { database, redis } = testServices();
+
   await redis.connect();
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -29,6 +31,7 @@ it('exposes real admission, normalization, retries, delayed state and committed 
     await assertAdmissionConfiguration(redis, sale);
   };
   const app = createHealthServer(probe);
+
   registerSaleRoutes(app, {
     configurationScope: '/flash_test',
     database,
@@ -36,10 +39,13 @@ it('exposes real admission, normalization, retries, delayed state and committed 
     admission,
     probe,
   });
+
   try {
     await migrate(database);
     await persistSale(database, sale);
+
     const keys = admissionKeys(sale.id);
+
     await redis.hSet(keys[0], {
       starts_at: String(Date.parse(sale.startsAt)),
       ends_at: String(Date.parse(sale.endsAt)),
@@ -48,6 +54,7 @@ it('exposes real admission, normalization, retries, delayed state and committed 
       configuration_version: '1',
     });
     await admission.recover(sale, []);
+
     const base = `/sales/${sale.id}`;
     const submit = (identifier: string, idempotencyKey: string) =>
       app.inject({
@@ -55,6 +62,7 @@ it('exposes real admission, normalization, retries, delayed state and committed 
         url: `${base}/purchases`,
         payload: { identifier, idempotencyKey },
       });
+
     expect(
       (await app.inject(`${base}/order?identifier=Person`)).json(),
     ).toEqual({ status: 'AVAILABLE', order: { status: 'NOT_ORDERED' } });
@@ -81,9 +89,13 @@ it('exposes real admission, normalization, retries, delayed state and committed 
       reason: 'sold_out',
     });
     expect(await redis.xLen(keys[4])).toBe(1);
+
     const confirmation = await admission.lookup(sale.id, 'person');
+
     expect(confirmation.status).toBe('present');
+
     if (confirmation.status !== 'present') throw new Error('Missing admission');
+
     await redis.hSet(
       `${keys[0]}:retries`,
       confirmation.reservation.streamId,
@@ -101,11 +113,13 @@ it('exposes real admission, normalization, retries, delayed state and committed 
       status: 'AVAILABLE',
       order: { status: 'PROCESSING', phase: 'delayed' },
     });
+
     const orderId = await persistOrder(database, {
       saleId: sale.id,
       identifier: 'person',
       admittedAtMs: confirmation.reservation.admittedAtMs,
     });
+
     expect((await submit('person', 'key')).json()).toEqual({
       status: 'PROCESSING',
       phase: 'queued',
@@ -136,15 +150,20 @@ it('exposes real admission, normalization, retries, delayed state and committed 
   } finally {
     admission.close();
     await app.close();
+
     if (redis.isOpen) redis.destroy();
+
     if (!database.ended) await database.end();
   }
 }, 30000);
 it('replays an admitted result after closing and distinguishes upcoming and ended', async () => {
   const { database, redis } = testServices();
+
   await redis.connect();
+
   const admission = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const app = createHealthServer(async () => {});
+
   registerSaleRoutes(app, {
     configurationScope: '/flash_test',
     database,
@@ -154,8 +173,10 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
       await database.query('SELECT 1');
     },
   });
+
   try {
     await migrate(database);
+
     const id = randomUUID();
     const start = Date.now() + 2000,
       end = start + 2000;
@@ -165,8 +186,11 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
       endsAt: new Date(end).toISOString(),
       initialStock: 1,
     };
+
     await persistSale(database, sale);
+
     const keys = admissionKeys(id);
+
     await redis.hSet(keys[0], {
       starts_at: String(start),
       ends_at: String(end),
@@ -175,12 +199,14 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
       configuration_version: '1',
     });
     await admission.recover(sale, []);
+
     const post = (key: string) =>
       app.inject({
         method: 'POST',
         url: `/sales/${id}/purchases`,
         payload: { identifier: 'person', idempotencyKey: key },
       });
+
     expect((await post('early')).json()).toEqual({
       status: 'REJECTED',
       reason: 'upcoming',
@@ -189,6 +215,7 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
       .poll(
         async () => {
           const time = (await redis.sendCommand(['TIME'])) as string[];
+
           return (
             Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >= start
           );
@@ -204,6 +231,7 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
       .poll(
         async () => {
           const time = (await redis.sendCommand(['TIME'])) as string[];
+
           return (
             Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >= end
           );
@@ -242,7 +270,9 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
 
 it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or duplicating its allocation', async () => {
   const { database, redis } = testServices();
+
   await redis.connect();
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -263,6 +293,7 @@ it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or dup
     },
   );
   const app = createHealthServer(async () => {});
+
   registerSaleRoutes(app, {
     configurationScope: '/flash_test',
     database,
@@ -272,10 +303,13 @@ it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or dup
       await database.query('SELECT 1');
     },
   });
+
   try {
     await migrate(database);
     await persistSale(database, sale);
+
     const keys = admissionKeys(sale.id);
+
     await redis.hSet(keys[0], {
       starts_at: String(Date.parse(sale.startsAt)),
       ends_at: String(Date.parse(sale.endsAt)),
@@ -285,12 +319,14 @@ it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or dup
     });
     await admission.recover(sale, []);
     loseConfirmation = true;
+
     const post = () =>
       app.inject({
         method: 'POST',
         url: `/sales/${sale.id}/purchases`,
         payload: { identifier: 'person', idempotencyKey: 'same-key' },
       });
+
     expect((await post()).json()).toEqual({
       status: 'NOT_ORDERED',
       reason: 'confirmation_uncertain',
@@ -325,6 +361,7 @@ it('admits from preloaded Redis configuration during a PostgreSQL outage and ret
     await database.query('SELECT 1');
   };
   const app = createHealthServer(probe);
+
   registerSaleRoutes(app, {
     configurationScope: '/flash_test',
     database,
@@ -332,6 +369,7 @@ it('admits from preloaded Redis configuration during a PostgreSQL outage and ret
     admission,
     probe,
   });
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -345,6 +383,7 @@ it('admits from preloaded Redis configuration during a PostgreSQL outage and ret
       url: `/sales/${saleId}/purchases`,
       payload: { identifier, idempotencyKey: key },
     });
+
   try {
     await migrate(database);
     await persistSale(database, sale);
@@ -385,10 +424,12 @@ it('admits from preloaded Redis configuration during a PostgreSQL outage and ret
       (await app.inject(`/sales/${sale.id}/order?identifier=person`))
         .statusCode,
     ).toBe(503);
+
     const uncertain = {
       status: 'NOT_ORDERED',
       reason: 'confirmation_uncertain',
     };
+
     // Never rebuild missing or invalid configuration from a request.
     expect((await post('unknown', 'missing-key', randomUUID())).json()).toEqual(
       uncertain,
@@ -407,7 +448,9 @@ it('admits from preloaded Redis configuration during a PostgreSQL outage and ret
   } finally {
     admission.close();
     await app.close();
+
     if (redis.isOpen) redis.destroy();
+
     if (!database.ended) await database.end();
   }
 }, 20000);

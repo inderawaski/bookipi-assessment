@@ -6,9 +6,11 @@ it('rejects invalid input before Redis and treats transport/malformed replies as
   const redis = {
     sendCommand: async () => {
       calls++;
+
       throw new Error('timeout');
     },
   };
+
   await expect(
     admitPurchase(redis, 'sale', { identifier: ' ', idempotencyKey: 'key' }),
   ).rejects.toThrow('Identifier');
@@ -19,6 +21,7 @@ it('rejects invalid input before Redis and treats transport/malformed replies as
       idempotencyKey: 'key',
     }),
   ).rejects.toBeInstanceOf(AdmissionUncertainError);
+
   for (const result of [
     null,
     [],

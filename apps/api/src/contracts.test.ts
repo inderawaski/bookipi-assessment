@@ -21,17 +21,20 @@ it('validates shared schemas using Fastify without coercion or silently removing
     lookupResponseSchema,
     saleResponseSchema,
   ];
+
   schemas.forEach((body, index) =>
     app.post(`/schema/${index}`, { schema: { body } }, async () => ({
       valid: true,
     })),
   );
+
   const check = async (index: number, payload: object, code: number) => {
     expect(
       (await app.inject({ method: 'POST', url: `/schema/${index}`, payload }))
         .statusCode,
     ).toBe(code);
   };
+
   try {
     await check(0, { identifier: 'a@.', idempotencyKey: 'key' }, 200);
     await check(0, { identifier: 42, idempotencyKey: 'key' }, 400);
@@ -75,6 +78,7 @@ it('validates shared schemas using Fastify without coercion or silently removing
       },
       400,
     );
+
     const sale = {
       saleId: 'sale',
       startsAt: '2026-10-15T00:00:00Z',
@@ -83,6 +87,7 @@ it('validates shared schemas using Fastify without coercion or silently removing
       status: 'OPEN',
       remainingStock: 1,
     };
+
     await check(5, sale, 200);
     await check(5, { ...sale, remainingStock: -1 }, 400);
     await check(5, { ...sale, observedAt: 'yesterday' }, 400);

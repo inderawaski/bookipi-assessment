@@ -17,14 +17,19 @@ import { testServices } from '../services.js';
 
 async function freePort() {
   const server = createServer();
+
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
   });
+
   const address = server.address();
+
   if (!address || typeof address === 'string')
     throw new Error('Missing test port');
+
   await new Promise<void>((resolve) => server.close(() => resolve()));
+
   return String(address.port);
 }
 
@@ -33,7 +38,9 @@ it('shares overlapping probes per instance and reconciles across two APIs and a 
   // Isolate the actual service's sale scan from other integration fixtures.
   const name = `flash_test_readiness_${randomUUID().replaceAll('-', '')}`;
   const url = new URL(process.env.TEST_DATABASE_URL!);
+
   url.pathname = `/${name}`;
+
   const database = createDatabase(url.href, 2, 2000);
   const keys = [
     'DATABASE_URL',
@@ -45,6 +52,7 @@ it('shares overlapping probes per instance and reconciles across two APIs and a 
   const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const apps: Awaited<ReturnType<typeof startApi>>[] = [];
   let created = false;
+
   try {
     await admin.query(`CREATE DATABASE "${name}"`);
     created = true;
@@ -55,12 +63,15 @@ it('shares overlapping probes per instance and reconciles across two APIs and a 
       REDIS_URL: process.env.TEST_REDIS_URL,
       HOST: '127.0.0.1',
     });
+
     for (let i = 0; i < 2; i++) {
       process.env.API_PORT = await freePort();
       apps.push(await startApi('api'));
     }
+
     process.env.WORKER_PORT = await freePort();
     apps.push(await startWorker('worker'));
+
     const recover = vi.spyOn(RedisAdmission.prototype, 'recover');
     const sale = {
       id: randomUUID(),
@@ -68,13 +79,16 @@ it('shares overlapping probes per instance and reconciles across two APIs and a 
       endsAt: new Date(Date.now() + 120000).toISOString(),
       initialStock: 10000,
     };
+
     await persistSale(database, sale);
     await initializeAdmission(redis, sale);
+
     const responses = await Promise.all(
       apps.flatMap((app) =>
         Array.from({ length: 8 }, () => app.inject('/health/ready')),
       ),
     );
+
     expect(responses.map((response) => response.statusCode)).toEqual(
       Array(24).fill(200),
     );
@@ -106,11 +120,17 @@ it('shares overlapping probes per instance and reconciles across two APIs and a 
     ).toBe(0);
   } finally {
     vi.restoreAllMocks();
+
     for (const app of apps.reverse()) await app.close();
+
     if (redis.isOpen) redis.destroy();
+
     await database.end();
+
     if (created) await admin.query(`DROP DATABASE "${name}"`);
+
     await admin.end();
+
     for (const key of keys) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];

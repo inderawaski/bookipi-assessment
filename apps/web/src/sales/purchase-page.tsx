@@ -12,6 +12,7 @@ function rememberedIdentifier() {
     return '';
   }
 }
+
 function Purchase({
   identifier,
   session,
@@ -22,11 +23,13 @@ function Purchase({
   saleOpen: boolean;
 }) {
   const order = useOrder(identifier, session);
+
   return (
     <form
       id="purchase-form"
       onSubmit={(event) => {
         event.preventDefault();
+
         if (saleOpen || order.uncertain) void order.submit();
       }}
     >
@@ -81,17 +84,21 @@ export function PurchasePage() {
   const [input, setInput] = useState(rememberedIdentifier);
   const sessions = useRef(new Map<string, Session>());
   let identifier = '';
+
   try {
     identifier = normalizeIdentifier(input);
   } catch {
     /* Render the validation hint below. */
   }
+
   if (identifier && !sessions.current.has(identifier))
     sessions.current.set(identifier, createSession());
+
   const target =
     sale &&
     Date.parse(sale.status === 'UPCOMING' ? sale.startsAt : sale.endsAt);
   const seconds = target ? Math.max(0, Math.ceil((target - now) / 1000)) : 0;
+
   return (
     <main>
       <header>
@@ -139,6 +146,7 @@ export function PurchasePage() {
             aria-invalid={Boolean(input && !identifier)}
             onChange={(event) => {
               setInput(event.target.value);
+
               try {
                 localStorage.setItem(
                   `flash-sale:${saleId}`,

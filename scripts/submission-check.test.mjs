@@ -14,12 +14,17 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const runner = resolve('scripts/submission-check.mjs');
+
 function run(t, overrides = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'submission-check-'));
+
   t.after(() => rmSync(directory, { recursive: true, force: true }));
+
   const bin = join(directory, 'bin');
+
   mkdirSync(bin);
   writeFileSync(join(directory, '.env.example'), '');
+
   const stub = `#!${process.execPath}
 const { basename } = require('node:path');
 const command = basename(process.argv[1]);
@@ -29,8 +34,10 @@ else if (command === 'git' && args[0] === 'rev-parse') console.log(args[1] === '
 else console.log(command + ' ' + args.join(' '));
 if (command === 'pnpm' && args[0] === process.env.FAKE_FAIL) process.exit(7);
 `;
+
   for (const command of ['git', 'pnpm', 'docker'])
     writeFileSync(join(bin, command), stub, { mode: 0o755 });
+
   mkdirSync(join(directory, 'test-results/stress/project'), {
     recursive: true,
   });
@@ -38,16 +45,20 @@ if (command === 'pnpm' && args[0] === process.env.FAKE_FAIL) process.exit(7);
     join(directory, 'test-results/stress/project/result.json'),
     '{"dispatchValid":false}',
   );
+
   const result = spawnSync(process.execPath, [runner], {
     cwd: directory,
     encoding: 'utf8',
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...overrides },
   });
+
   return { directory, result };
 }
+
 function receipt(directory) {
   const root = join(directory, 'test-results/submission/test-commit');
   const output = join(root, readdirSync(root)[0]);
+
   return {
     output,
     report: JSON.parse(readFileSync(join(output, 'result.json'))),
@@ -57,6 +68,7 @@ function receipt(directory) {
 
 test('refuses dirty source before invoking checks', (t) => {
   const { result } = run(t, { FAKE_DIRTY: ' M README.md' });
+
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Commit all changes/);
   assert.doesNotMatch(result.stdout, /Checking/);
@@ -64,12 +76,15 @@ test('refuses dirty source before invoking checks', (t) => {
 
 test('pins commands, measurement configuration and artifact hashes without claiming human review', (t) => {
   const { directory, result } = run(t, { STRESS_CONNECTIONS: '1000' });
+
   assert.equal(
     result.status,
     0,
     result.stdout + result.stderr + JSON.stringify(receipt(directory).report),
   );
+
   const { output, report, manifest } = receipt(directory);
+
   assert.equal(report.commit, 'test-commit');
   assert.equal(report.tree, 'test-tree');
   assert.equal(report.stress.STRESS_CONNECTIONS, '1000');
@@ -90,6 +105,7 @@ test('pins commands, measurement configuration and artifact hashes without claim
     1,
   );
   assert.equal(manifest.serviceArtifacts.length, 1);
+
   for (const file of manifest.files) {
     assert.equal(
       file.sha256,
@@ -102,8 +118,11 @@ test('pins commands, measurement configuration and artifact hashes without claim
 
 test('retains failure and runs remaining checks instead of reporting a false pass', (t) => {
   const { directory, result } = run(t, { FAKE_FAIL: 'test:integration' });
+
   assert.equal(result.status, 1);
+
   const { report } = receipt(directory);
+
   assert.equal(report.automatedChecksPassed, false);
   assert.equal(report.steps[6].exitCode, 7);
   assert.deepEqual(report.steps.at(-1).command, ['git', 'diff', '--check']);

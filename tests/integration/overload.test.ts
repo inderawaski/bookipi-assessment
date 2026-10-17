@@ -12,7 +12,9 @@ import { testServices } from '../services.js';
 
 it('shares last stock and duplicate mappings across independently bounded API instances', async () => {
   const { database, redis } = testServices();
+
   await redis.connect();
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -26,10 +28,13 @@ it('shares last stock and duplicate mappings across independently bounded API in
   const admissions = apps.map(
     () => new RedisAdmission(process.env.TEST_REDIS_URL!, 2),
   );
+
   try {
     await migrate(database);
     await persistSale(database, sale);
+
     const keys = admissionKeys(sale.id);
+
     await redis.hSet(keys[0], {
       starts_at: String(Date.parse(sale.startsAt)),
       ends_at: String(Date.parse(sale.endsAt)),
@@ -47,6 +52,7 @@ it('shares last stock and duplicate mappings across independently bounded API in
         probe: async () => {},
       }),
     );
+
     const submit = (i: number, identifier: string, idempotencyKey: string) =>
       apps[i]!.inject({
         method: 'POST',
@@ -57,12 +63,15 @@ it('shares last stock and duplicate mappings across independently bounded API in
       submit(0, 'first', 'first'),
       submit(1, 'second', 'second'),
     ]);
+
     expect(results.map((r) => r.json().status).sort()).toEqual([
       'PROCESSING',
       'REJECTED',
     ]);
+
     const winner =
       results[0]!.json().status === 'PROCESSING' ? 'first' : 'second';
+
     expect((await submit(1, winner, winner)).json()).toEqual({
       status: 'PROCESSING',
       phase: 'queued',
@@ -87,7 +96,9 @@ it('shares last stock and duplicate mappings across independently bounded API in
 
 it('waits for an occupied admission connection and admits both buyers without losing work', async () => {
   const { redis, database } = testServices();
+
   await redis.connect();
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -96,6 +107,7 @@ it('waits for an occupied admission connection and admits both buyers without lo
   };
   const gate = new RedisAdmission(process.env.TEST_REDIS_URL!, 1);
   const keys = admissionKeys(sale.id);
+
   try {
     await redis.hSet(keys[0], {
       starts_at: String(Date.parse(sale.startsAt)),
@@ -105,10 +117,12 @@ it('waits for an occupied admission connection and admits both buyers without lo
       configuration_version: '1',
     });
     await gate.recover(sale, []);
+
     const first = gate.place(sale.id, {
       identifier: 'first',
       idempotencyKey: 'first',
     });
+
     expect(
       await gate.place(sale.id, {
         identifier: 'second',
@@ -136,9 +150,12 @@ it('waits for an occupied admission connection and admits both buyers without lo
 
 it('admits without waiting for an exhausted database pool', async () => {
   const { database, redis } = testServices();
+
   await redis.connect();
+
   const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   const app = createHealthServer(async () => {});
+
   registerSaleRoutes(app, {
     configurationScope: '/flash_test',
     database,
@@ -146,6 +163,7 @@ it('admits without waiting for an exhausted database pool', async () => {
     admission: gate,
     probe: async () => {},
   });
+
   const sale = {
     id: randomUUID(),
     startsAt: new Date(Date.now() - 60000).toISOString(),
@@ -153,6 +171,7 @@ it('admits without waiting for an exhausted database pool', async () => {
     initialStock: 1,
   };
   const keys = admissionKeys(sale.id);
+
   await redis.hSet(keys[0], {
     starts_at: String(Date.parse(sale.startsAt)),
     ends_at: String(Date.parse(sale.endsAt)),
@@ -161,7 +180,9 @@ it('admits without waiting for an exhausted database pool', async () => {
     configuration_version: '1',
   });
   await gate.recover(sale, []);
+
   const clients = await Promise.all([database.connect(), database.connect()]);
+
   try {
     const id = sale.id;
     const result = await app.inject({
@@ -169,6 +190,7 @@ it('admits without waiting for an exhausted database pool', async () => {
       url: `/sales/${id}/purchases`,
       payload: { identifier: 'person', idempotencyKey: 'key' },
     });
+
     expect(result.json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
     expect(database.waitingCount).toBe(0);
     expect(await redis.xLen(keys[4])).toBe(1);
@@ -212,6 +234,7 @@ it('expires a queued purchase before Lua without binding its key or reserving st
   };
   const keys = admissionKeys(sale.id);
   let first: ReturnType<typeof gate.place> | undefined;
+
   try {
     await redis.connect();
     await redis.hSet(keys[0], {
@@ -251,7 +274,9 @@ it('expires a queued purchase before Lua without binding its key or reserving st
     release();
     await first?.catch(() => {});
     gate.close();
+
     if (redis.isOpen) redis.destroy();
+
     await database.end();
   }
 });
@@ -287,6 +312,7 @@ it('waits beyond the former 10-ms limit and hands off queued purchases in order'
   };
   const keys = admissionKeys(sale.id);
   const purchases: ReturnType<typeof gate.place>[] = [];
+
   try {
     await redis.connect();
     await redis.hSet(keys[0], {
@@ -316,7 +342,9 @@ it('waits beyond the former 10-ms limit and hands off queued purchases in order'
         phase: 'queued',
       })),
     );
+
     const entries = await redis.xRange(keys[4], '-', '+');
+
     expect(entries?.map((entry) => entry.message.identifier)).toEqual([
       'first',
       'second',
@@ -326,7 +354,9 @@ it('waits beyond the former 10-ms limit and hands off queued purchases in order'
     release();
     await Promise.allSettled(purchases);
     gate.close();
+
     if (redis.isOpen) redis.destroy();
+
     await database.end();
   }
 });
@@ -361,6 +391,7 @@ it('prevents a timed-out operation sending after its leased client reconnects', 
     initialStock: 2,
   };
   const keys = admissionKeys(sale.id);
+
   try {
     await redis.connect();
     await redis.hSet(keys[0], {
@@ -372,10 +403,12 @@ it('prevents a timed-out operation sending after its leased client reconnects', 
     });
     await gate.recover(sale, []);
     hold = true;
+
     const expired = gate.place(sale.id, {
       identifier: 'expired',
       idempotencyKey: 'expired',
     });
+
     await ready;
     expect(await expired).toEqual({
       status: 'PROCESSING',
@@ -394,7 +427,9 @@ it('prevents a timed-out operation sending after its leased client reconnects', 
   } finally {
     release();
     gate.close();
+
     if (redis.isOpen) redis.destroy();
+
     await database.end();
   }
 });
@@ -430,6 +465,7 @@ it('releases the purchase lease before post-reply processing completes', async (
   };
   const keys = admissionKeys(sale.id);
   let first: ReturnType<typeof gate.place> | undefined;
+
   try {
     await redis.connect();
     await redis.hSet(keys[0], {
@@ -460,7 +496,9 @@ it('releases the purchase lease before post-reply processing completes', async (
     release();
     await first?.catch(() => {});
     gate.close();
+
     if (redis.isOpen) redis.destroy();
+
     await database.end();
   }
 });

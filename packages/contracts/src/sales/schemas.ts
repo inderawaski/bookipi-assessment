@@ -1,5 +1,6 @@
 // JSON Schema shared by Fastify route validation/serialization and client tooling.
 const text = { type: 'string', minLength: 1, maxLength: 1024 } as const;
+
 function object(properties: Record<string, unknown>) {
   return {
     type: 'object',
@@ -8,6 +9,7 @@ function object(properties: Record<string, unknown>) {
     properties,
   } as const;
 }
+
 const identifierInput = {
   type: 'string',
   minLength: 1,

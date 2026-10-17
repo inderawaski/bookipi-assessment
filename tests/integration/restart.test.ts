@@ -4,8 +4,10 @@ import { it, expect } from 'vitest';
 import { cachedSaleConfigurations } from '../../packages/redis/src/index.js';
 import { vi } from 'vitest';
 import { testServices } from '../services.js';
+
 it('retains PostgreSQL and AOF markers across a restart without deleting volumes', async () => {
   const { database, redis } = testServices();
+
   try {
     await redis.connect();
     // This table exists only inside the disposable test database, never the application schema.
@@ -13,7 +15,9 @@ it('retains PostgreSQL and AOF markers across a restart without deleting volumes
       'CREATE TABLE bootstrap_marker (value text PRIMARY KEY)',
     );
     await database.query("INSERT INTO bootstrap_marker VALUES ('persistent')");
+
     const load = vi.fn(async () => []);
+
     await cachedSaleConfigurations(redis, 'restart-test', load);
     expect(load).toHaveBeenCalledTimes(1);
     await redis.set('bootstrap:restart', 'persistent');
@@ -35,18 +39,24 @@ it('retains PostgreSQL and AOF markers across a restart without deleting volumes
       ],
       { timeout: 30000 },
     );
+
     let ready = false;
+
     for (let attempt = 0; attempt < 40; attempt++) {
       try {
         if (!redis.isReady) await redis.connect();
+
         await database.query('SELECT 1');
         ready = true;
+
         break;
       } catch {
         if (redis.isOpen) redis.destroy();
+
         await setTimeout(250);
       }
     }
+
     expect(ready).toBe(true);
     expect(await redis.get('bootstrap:restart')).toBe('persistent');
     await cachedSaleConfigurations(redis, 'restart-test', load);
@@ -56,6 +66,7 @@ it('retains PostgreSQL and AOF markers across a restart without deleting volumes
     ).toEqual([{ value: 'persistent' }]);
   } finally {
     if (redis.isOpen) redis.destroy();
+
     await database.end();
   }
 }, 60000);

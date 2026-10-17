@@ -5,11 +5,13 @@ import { waitForReadiness } from './readiness.mjs';
 
 async function server(t, handler) {
   const app = createServer(handler);
+
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
     app.closeAllConnections();
     await new Promise((resolve) => app.close(resolve));
   });
+
   return `http://127.0.0.1:${app.address().port}`;
 }
 
@@ -28,6 +30,7 @@ test('waits for every replica and records transient unavailable responses', asyn
     response.end('{"status":"ready"}'),
   );
   const attempts = [];
+
   await waitForReadiness([slow, ready], {
     timeoutMs: 1000,
     retryMs: 5,
@@ -57,6 +60,7 @@ for (const [code, status] of [
       response.end(JSON.stringify({ status }));
     });
     const started = performance.now();
+
     await assert.rejects(
       waitForReadiness([endpoint], { timeoutMs: 80, retryMs: 5 }),
       (error) =>
@@ -69,6 +73,7 @@ for (const [code, status] of [
 
 test('bounds a readiness response that never arrives', async (t) => {
   const endpoint = await server(t, () => {});
+
   await assert.rejects(
     waitForReadiness([endpoint], { timeoutMs: 80 }),
     /Service readiness deadline exceeded/,

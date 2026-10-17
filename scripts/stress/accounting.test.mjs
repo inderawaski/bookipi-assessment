@@ -38,8 +38,10 @@ test('prescribed cases and duplicate keys have exact cardinality', () => {
       [100, 10000, 10000],
     ],
   );
+
   for (const scenario of scenarios) {
     const records = inputs(scenario);
+
     assert.equal(
       new Set(records.map((r) => r.identifier)).size,
       scenario.identifiers,
@@ -70,6 +72,7 @@ test('late responses do not invalidate timely dispatch; latency and outcomes acc
     ],
     2,
   );
+
   assert.equal(summary.validDispatch, true);
   assert.equal(summary.allResponsesWithinOneSecond, false);
   assert.deepEqual(summary.latencyMs, { p50: 50, p95: 1500, p99: 1500 });
@@ -83,7 +86,9 @@ test('business response gate rejects proxy, transport, malformed and missing res
     httpStatus: 409,
     response: { status: 'REJECTED', reason: 'sold_out' },
   };
+
   assert.equal(allBusinessResponses([soldOut], 1), true);
+
   for (const record of [
     { httpStatus: 504 },
     {},
@@ -92,6 +97,7 @@ test('business response gate rejects proxy, transport, malformed and missing res
   ]) {
     assert.equal(allBusinessResponses([record], 1), false);
   }
+
   assert.equal(allBusinessResponses([], 1), false);
 });
 test('missing, late, duplicate and inconsistent dispatch evidence invalidates runs', () => {
@@ -134,7 +140,9 @@ test('real socket evidence detects acquisition stretch after iteration starts', 
       }, 1100);
     });
   });
+
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
   try {
     const result = await burst(
       `http://127.0.0.1:${server.address().port}`,
@@ -142,6 +150,7 @@ test('real socket evidence detects acquisition stretch after iteration starts', 
       { requests: 2, identifiers: 2 },
       { connections: 1 },
     );
+
     assert.equal(result.dispatched, 2);
     assert.equal(result.completed, 2);
     assert.equal(result.validDispatch, false);
@@ -163,13 +172,16 @@ test('preconnected clients reach a real server in the dispatch window', async ()
       response.end('{"status":"REJECTED","reason":"busy"}');
     });
   });
+
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
   try {
     const result = await burst(
       `http://127.0.0.1:${server.address().port}`,
       'sale',
       { requests: 10, identifiers: 10 },
     );
+
     assert.equal(result.validDispatch, true);
     assert.equal(received.length, 10);
     assert.ok(Math.max(...received) - Math.min(...received) < 1000);
@@ -197,6 +209,7 @@ test('final accounting detects oversell, loss, duplicates, mismatches and an und
     pending: 0,
     remainingStock: 0,
   };
+
   assert.ok(Object.values(validateFinal(1, final, ['person'])).every(Boolean));
   assert.equal(validateFinal(0, final, []).noOversell, false);
   assert.equal(
@@ -237,6 +250,7 @@ test('final accounting detects oversell, loss, duplicates, mismatches and an und
 
 test('Docker terminal control sequences are removed from machine-readable samples', () => {
   const sample = resourceSample('\u001b[2J\u001b[H{"CPUPerc":"12.0%"}');
+
   assert.equal(sample.CPUPerc, '12.0%');
   assert.ok(sample.sampledAt);
   assert.equal(resourceSample('\u001b[H'), null);
@@ -249,6 +263,7 @@ test('admission window includes opening and excludes closing, even after recover
     endsAt: new Date(2000).toISOString(),
   };
   const entries = (time) => [{ message: { admitted_at_ms: String(time) } }];
+
   assert.equal(admissionsWithinWindow(entries(1000), sale), true);
   assert.equal(admissionsWithinWindow(entries(1999), sale), true);
   assert.equal(admissionsWithinWindow(entries(999), sale), false);
@@ -264,7 +279,9 @@ test('dispatch hook runs after preconnect and before any request is written', as
     request.resume();
     response.end('{"status":"REJECTED","reason":"busy"}');
   });
+
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
   try {
     const result = await burst(
       `http://127.0.0.1:${server.address().port}`,
@@ -281,6 +298,7 @@ test('dispatch hook runs after preconnect and before any request is written', as
         },
       },
     );
+
     assert.equal(result.validDispatch, true);
     assert.equal(result.completed, 2);
   } finally {
@@ -297,7 +315,9 @@ test('closed preconnected sockets retain failed queued request accounting', asyn
       200,
     );
   });
+
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
   try {
     const result = await burst(
       `http://127.0.0.1:${server.address().port}`,
@@ -305,6 +325,7 @@ test('closed preconnected sockets retain failed queued request accounting', asyn
       { requests: 100, identifiers: 100 },
       { connections: 10, timeoutMs: 2000 },
     );
+
     assert.equal(result.records.length, 100);
     assert.equal(result.validDispatch, false);
     assert.ok(result.outcomes.transport_error > 0);
@@ -324,6 +345,7 @@ test('order SLO rejects missing observations, empty admissions and exact p99 bou
   const observed = Object.fromEntries(
     entries.map((e) => [e.message.identifier, 2999]),
   );
+
   observed['99'] = 11000;
   assert.ok(
     Object.values(orderLatency(entries, observed).invariants).every(Boolean),
@@ -349,6 +371,7 @@ test('dispatch validity uses each workload window independently of one-second re
   const records = [
     { index: 0, scheduledMs: 2000, dispatchMs: 2999, completedMs: 4000 },
   ];
+
   assert.equal(summarize(records, 1, 3000).validDispatch, true);
   assert.equal(summarize(records, 1, 3000).allResponsesWithinOneSecond, false);
   assert.equal(summarize(records, 1, 3000).allResponsesWithinWindow, false);
@@ -359,11 +382,13 @@ test('generator honors synchronized release and custom arrival windows over real
   const server = http.createServer((_req, res) => {
     res.end('{"status":"SUCCESS"}');
   });
+
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => {
     server.closeAllConnections();
     server.close();
   });
+
   const base = `http://127.0.0.1:${server.address().port}`;
   const scenario = {
     requests: 3,
@@ -372,15 +397,18 @@ test('generator honors synchronized release and custom arrival windows over real
     scheduleWindowMs: 100,
   };
   const paced = await burst(base, 'sale', scenario);
+
   assert.deepEqual(
     paced.records.map((r) => r.scheduledMs),
     [0, 100 / 3, 200 / 3],
   );
   assert.equal(paced.validDispatch, true);
+
   const synchronized = await burst(base, 'sale', {
     ...scenario,
     scheduleWindowMs: 0,
   });
+
   assert.deepEqual(
     synchronized.records.map((r) => r.scheduledMs),
     [0, 0, 0],

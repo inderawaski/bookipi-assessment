@@ -14,23 +14,28 @@ import { scenarios, resourceSample } from './stress/accounting.mjs';
 
 const selected = process.argv.slice(2);
 const maxConnections = Number(process.env.STRESS_MAX_CONNECTIONS || 30000);
+
 if (
   !Number.isInteger(maxConnections) ||
   maxConnections < 1 ||
   maxConnections > 30000
 )
   throw new Error('Maximum connections must be 1..30000');
+
 const requestedConnections = Number(
   process.env.STRESS_CONNECTIONS || Math.min(5000, maxConnections),
 );
+
 if (
   !Number.isInteger(requestedConnections) ||
   requestedConnections < 1 ||
   requestedConnections > maxConnections
 )
   throw new Error('Connections must be 1..STRESS_MAX_CONNECTIONS');
+
 const apiReplicas = Number(process.env.STRESS_API_REPLICAS || 6);
 const workerReplicas = Number(process.env.STRESS_WORKER_REPLICAS || 1);
+
 if (
   !Number.isInteger(apiReplicas) ||
   apiReplicas < 1 ||
@@ -40,12 +45,16 @@ if (
   workerReplicas > 8
 )
   throw new Error('API replicas must be 1..10; worker replicas must be 1..8');
+
 if (selected.some((name) => !scenarios.some((s) => s.name === name)))
   throw new Error('Unknown scenario');
+
 const build = spawnSync('pnpm', ['--filter', './packages/**', 'build'], {
   stdio: 'inherit',
 });
+
 if (build.status !== 0) throw new Error('Build failed');
+
 const commit = spawnSync('git', ['rev-parse', 'HEAD'], {
   encoding: 'utf8',
 }).stdout.trim();
@@ -58,10 +67,13 @@ const jobs = scenarios
     scenario,
     connections: Math.min(scenario.requests, requestedConnections),
   }));
+
 for (const { scenario, connections } of jobs) {
   const project = `flash-test-${randomUUID()}`;
   const output = resolve(`test-results/stress/${project}/${scenario.name}`);
+
   mkdirSync(output, { recursive: true });
+
   const args = [
     'compose',
     '-f',
@@ -73,15 +85,20 @@ for (const { scenario, connections } of jobs) {
     '--profile',
     'stress',
   ];
+
   function docker(tail) {
     const result = spawnSync('docker', [...args, ...tail], {
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
     });
+
     if (result.status !== 0) throw new Error(result.stderr || 'Docker failed');
+
     return result.stdout.trim();
   }
+
   let sampler;
+
   try {
     docker([
       'up',
@@ -100,6 +117,7 @@ for (const { scenario, connections } of jobs) {
       'proxy',
     ]);
     writeFileSync(`${output}/compose.yaml`, docker(['config']));
+
     const sources = [
       'scripts/stress.mjs',
       'scripts/stress/case.mjs',
@@ -111,6 +129,7 @@ for (const { scenario, connections } of jobs) {
       'compose.stress.yaml',
       'deploy/stress-proxy.conf',
     ];
+
     writeFileSync(
       `${output}/sources.json`,
       JSON.stringify(
@@ -163,7 +182,9 @@ for (const { scenario, connections } of jobs) {
         2,
       ),
     );
+
     const ids = docker(['ps', '-q']).split('\n');
+
     // Continuous samples are retained independently of the load generator's event loop.
     sampler = spawn('docker', ['stats', '--format', '{{json .}}', ...ids], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -174,6 +195,7 @@ for (const { scenario, connections } of jobs) {
     createInterface({ input: sampler.stdout }).on('line', (line) => {
       try {
         const sample = resourceSample(line);
+
         if (sample)
           appendFileSync(
             `${output}/resources.jsonl`,
@@ -186,6 +208,7 @@ for (const { scenario, connections } of jobs) {
     sampler.stderr.on('data', (chunk) =>
       appendFileSync(`${output}/resources-errors.log`, chunk),
     );
+
     const port = (service, internal, index = 1) =>
       docker(['port', '--index', String(index), service, internal])
         .split(':')
@@ -232,11 +255,14 @@ for (const { scenario, connections } of jobs) {
           .filter(Boolean)
           .map((line) => JSON.parse(line))
       : [];
+
     if (!resourceSamples.length)
       throw new Error(
         `Missing resource samples; case error: ${result.error ?? 'none'}`,
       );
+
     const validDispatch = result.burst?.validDispatch;
+
     if (
       !validDispatch &&
       connections < Math.min(scenario.requests, maxConnections)
@@ -246,11 +272,13 @@ for (const { scenario, connections } of jobs) {
         scenario.requests,
         maxConnections,
       );
+
       console.info(
         `Invalid dispatch: rerunning with ${increased} preconnected sockets in a fresh project`,
       );
       jobs.push({ scenario, connections: increased });
     } else if (code !== 0) process.exitCode = 1;
+
     console.info(`${scenario.name}: ${output}/result.json`);
   } catch (error) {
     writeFileSync(`${output}/runner-error.txt`, String(error));
@@ -263,11 +291,13 @@ for (const { scenario, connections } of jobs) {
       spawnSync('netstat', ['-s'], { encoding: 'utf8' }).stdout ??
         'unavailable',
     );
+
     try {
       writeFileSync(`${output}/services.log`, docker(['logs', '--no-color']));
     } catch {
       process.exitCode = 1;
     }
+
     try {
       docker(['down', '--volumes', '--remove-orphans']);
     } catch {

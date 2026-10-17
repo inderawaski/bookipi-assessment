@@ -16,21 +16,29 @@ import {
 import { createDatabase } from '../../packages/database/src/index.js';
 import { createOrderConsumer } from '../../apps/worker/src/orders/consumer.js';
 import { testServices } from '../services.js';
+
 it('retains exhausted allocation, replays once, repairs missing work and completion, and fences unknown schema', async () => {
   const { redis, database } = testServices();
+
   await redis.connect();
+
   const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
+
   try {
     await migrate(database);
+
     const sale = {
       id: randomUUID(),
       startsAt: new Date(Date.now() - 60000).toISOString(),
       endsAt: new Date(Date.now() + 60000).toISOString(),
       initialStock: 1,
     };
+
     await persistSale(database, sale);
+
     const keys = admissionKeys(sale.id),
       prefix = saleKey(sale.id);
+
     await redis.hSet(keys[0], {
       starts_at: String(Date.parse(sale.startsAt)),
       ends_at: String(Date.parse(sale.endsAt)),
@@ -40,8 +48,10 @@ it('retains exhausted allocation, replays once, repairs missing work and complet
     });
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
+
     const entry = (await redis.xRange(keys[4], '-', '+'))![0]!;
     const policy = { maxAttempts: 1, baseMs: 1, maxMs: 1 };
+
     expect(await claimAttempt(redis, sale.id, entry.id, policy)).toBe(1);
     expect(await claimAttempt(redis, sale.id, entry.id, policy)).toBe(0);
     await delayAttempt(redis, sale.id, entry.id, 1, policy);
@@ -55,6 +65,7 @@ it('retains exhausted allocation, replays once, repairs missing work and complet
           (await redis.hGet(`${prefix}:retries`, entry.id))!,
         );
         const time = (await redis.sendCommand(['TIME'])) as string[];
+
         return (
           Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >=
           state.nextAt
@@ -70,14 +81,18 @@ it('retains exhausted allocation, replays once, repairs missing work and complet
     ).rejects.toThrow('invalid accounting');
     expect((await gate.lookup(sale.id, 'person')).status).toBe('confirming');
     await gate.recover(sale, []);
+
     const restored = await gate.lookup(sale.id, 'person');
+
     expect(restored.status).toBe('present');
+
     const admittedAtMs = Number(entry.message.admitted_at_ms);
     const orderId = await persistOrder(database, {
       saleId: sale.id,
       identifier: 'person',
       admittedAtMs,
     });
+
     await gate.recover(sale, [{ identifier: 'person', admittedAtMs, orderId }]);
     await gate.recover(sale, [{ identifier: 'person', admittedAtMs, orderId }]);
     expect(await redis.hGet(`${prefix}:completed`, 'person')).toBe(orderId);
@@ -100,20 +115,27 @@ it('exhausts during database outage and resumes once after repeated replay and w
     1,
     100,
   );
+
   await redis.connect();
+
   let stop: (() => Promise<void>) | undefined;
   const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
+
   try {
     await migrate(database);
+
     const sale = {
       id: randomUUID(),
       startsAt: new Date(Date.now() - 60000).toISOString(),
       endsAt: new Date(Date.now() + 60000).toISOString(),
       initialStock: 1,
     };
+
     await persistSale(database, sale);
+
     const keys = admissionKeys(sale.id),
       prefix = saleKey(sale.id);
+
     await redis.hSet(keys[0], {
       starts_at: String(Date.parse(sale.startsAt)),
       ends_at: String(Date.parse(sale.endsAt)),
@@ -123,8 +145,10 @@ it('exhausts during database outage and resumes once after repeated replay and w
     });
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
+
     const entry = (await redis.xRange(keys[4], '-', '+'))![0]!;
     const policy = { maxAttempts: 2, baseMs: 10, maxMs: 10 };
+
     stop = await createOrderConsumer(
       process.env.TEST_REDIS_URL!,
       unavailable,
@@ -137,6 +161,7 @@ it('exhausts during database outage and resumes once after repeated replay and w
       .poll(
         async () => {
           const raw = await redis.hGet(`${prefix}:retries`, entry.id);
+
           return raw ? JSON.parse(raw).reason : undefined;
         },
         { timeout: 8000 },
@@ -166,6 +191,7 @@ it('exhausts during database outage and resumes once after repeated replay and w
           (await redis.hGet(`${prefix}:retries`, entry.id))!,
         );
         const time = (await redis.sendCommand(['TIME'])) as string[];
+
         return (
           Number(time[0]) * 1000 + Math.floor(Number(time[1]) / 1000) >=
           state.nextAt

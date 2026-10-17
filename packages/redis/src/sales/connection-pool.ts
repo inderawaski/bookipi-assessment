@@ -8,7 +8,9 @@ import { setMaxListeners } from 'node:events';
 import { createClientPool, TimeoutError } from 'redis';
 
 type Pool = ReturnType<typeof createClientPool>;
+
 type Connection = Parameters<Parameters<Pool['execute']>[0]>[0];
+
 export class CapacityError extends Error {}
 
 /** Library-managed acquisition, with application operation deadlines and shutdown. */
@@ -30,6 +32,7 @@ export class AdmissionConnections {
   async connect(): Promise<void> {
     if (this.shutdown.signal.aborted)
       throw new Error('Admission connections closed');
+
     if (!this.pool) {
       this.pool = createClientPool(
         {
@@ -49,7 +52,9 @@ export class AdmissionConnections {
       });
       this.connecting = this.pool.connect();
     }
+
     const connecting = this.connecting;
+
     try {
       await connecting;
     } catch (error) {
@@ -57,10 +62,13 @@ export class AdmissionConnections {
         this.pool = undefined;
         this.connecting = undefined;
       }
+
       throw error;
     }
+
     if (this.shutdown.signal.aborted) {
       this.pool?.destroy();
+
       throw new Error('Admission connections closed');
     }
   }
@@ -69,38 +77,50 @@ export class AdmissionConnections {
     kind: AdmissionOperation,
   ): Promise<T> {
     await this.connect();
+
     let acquired = false;
     const waitStarted = performance.now();
     let stop!: () => void;
     const stopped = new Promise<never>((_, reject) => {
       stop = () => reject(new Error('Admission connections closed'));
       this.shutdown.signal.addEventListener('abort', stop, { once: true });
+
       if (this.shutdown.signal.aborted) stop();
     });
+
     try {
       return await Promise.race([
         this.pool!.execute(async (redis) => {
           acquired = true;
+
           const leasedAt = performance.now();
+
           this.measurements.duration(
             `redis_${kind}_acquire_seconds`,
             (leasedAt - waitStarted) / 1000,
           );
+
           if (this.shutdown.signal.aborted)
             throw new Error('Admission connections closed');
+
           this.measurements.acquire();
+
           let expired = false;
           const cancellation = new AbortController();
           let timer: ReturnType<typeof setTimeout> | undefined;
+
           try {
             return await Promise.race([
               (async () => {
                 // A destroyed lease stays owned by the library; reconnect only before a new operation.
                 if (!redis.isReady) await redis.connect();
+
                 if (expired || this.shutdown.signal.aborted) {
                   redis.destroy();
+
                   throw new Error('Admission connections unavailable');
                 }
+
                 return operation(redis.withAbortSignal(cancellation.signal));
               })(),
               new Promise<never>((_, reject) => {
@@ -115,6 +135,7 @@ export class AdmissionConnections {
           } catch (error) {
             cancellation.abort();
             redis.destroy();
+
             throw error;
           } finally {
             clearTimeout(timer);
@@ -135,10 +156,12 @@ export class AdmissionConnections {
           `redis_${kind}_acquire_expired_seconds`,
           (performance.now() - waitStarted) / 1000,
         );
+
         throw new CapacityError('Admission connection acquisition timed out', {
           cause: error,
         });
       }
+
       throw error;
     } finally {
       this.shutdown.signal.removeEventListener('abort', stop);
