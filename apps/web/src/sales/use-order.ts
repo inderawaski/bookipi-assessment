@@ -33,7 +33,7 @@ const rejections: Record<RejectionReason, string> = {
   sold_out: 'The sale is sold out.',
   busy: 'The service is busy. Please try again.',
   unavailable: 'The service is unavailable. Please try again.',
-  invalid_input: 'The identifier could not be accepted.',
+  invalid_input: 'Please enter a valid username.',
   idempotency_conflict:
     'Request conflict. Check your order status before trying again.',
   not_found: 'Sale not found. Check the sale link.',
@@ -175,7 +175,7 @@ export function useOrder(identifier: string, session: Session) {
       if (result.status === 'REJECTED') {
         session.message =
           result.reason === 'already_placed'
-            ? 'Already placed: this identifier already has an order.'
+            ? 'Already placed: check your order below.'
             : rejections[result.reason];
       }
 
