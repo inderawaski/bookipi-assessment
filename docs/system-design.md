@@ -8,6 +8,20 @@ Allocate limited inventory safely when many buyers compete for one product, ackn
 
 The application consists of one purchase page, an API, workers, Redis, and PostgreSQL. There are exactly two application tables: `flash_sale` and `order`. Multiple sale IDs are supported; the product itself has no table or catalogue.
 
+### Non-goals
+
+This prototype focuses on flash-sale admission, inventory correctness, and asynchronous order completion. The following concerns are out of scope:
+
+- **General e-commerce:** multiple products or variants, a product catalogue, quantity selection, carts, and multi-item checkout. Multiple sale IDs are supported, but each purchase reserves one unit of the sale's single product.
+- **Transactions and finance:** payments, pricing, taxes, coupons, refunds, financial settlement, and accounting. A committed order records an allocation; it does not mean payment was collected.
+- **Business eligibility and fulfillment:** shipping or geographic eligibility, fraud decisions, delivery, returns, cancellations, and post-purchase order management. Sale-window, stock, and duplicate-identifier checks remain part of admission.
+- **Third-party integrations:** payment gateways, shipping providers, external identity services, and email/SMS notifications.
+- **Authentication and authorization:** accounts, verified buyer identity, sessions, roles, and administrative access control. A supplied identifier is not proof of identity or a guarantee of one purchase per person.
+- **Production security and abuse defense:** bot detection, CAPTCHA, DDoS mitigation, and a comprehensive security or compliance program. Existing input validation and correctness safeguards remain necessary within the prototype.
+- **Disaster resilience beyond the documented durability model:** force-majeure events, host/zone/region loss, permanent storage loss or corruption, backup restoration, and automatic cross-site failover. Routine service crashes, retries, recovery of surviving state, and the acknowledged Redis reservation-loss window remain in scope; recovery assumes intact PostgreSQL persistent storage.
+- **Comprehensive frontend delivery:** a complete UI/UX, branding, localization, broad device/browser coverage, and frontend performance optimization or benchmarking. The purchase page must still communicate processing, success, rejection, and uncertainty correctly.
+- **Full production operations:** a managed cloud deployment, availability guarantees, on-call automation, and long-term data retention or archival. Local deployment, diagnostic metrics, and documented recovery procedures support validation of the prototype.
+
 ### Scale
 
 This is a highly anticipated flash sale: thousands of users will attempt to purchase the same product simultaneously when the sale opens. Demand is concentrated around the opening instant rather than spread evenly through the sale window. Limited stock means the system must handle far more attempts than successful orders, while repeated clicks and retries add contention for the same inventory and identifiers.
@@ -31,14 +45,14 @@ The one-second interval defines offered purchase traffic. Responses and asynchro
 ### Demand and inventory planning cases
 
 | Workload           | Initial stock | Requests | Unique identifiers | Dispatch window                              |
-| ------------------ | ------------: | -------: | -----------------: | -------------------------------------------- |
-| `no-oversell`      |            10 |      100 |                100 | Synchronized release, writes within 1 second |
-| `duplicates`       |            10 |      100 |                 10 | Synchronized release, writes within 1 second |
-| `sufficient-stock` |         1,000 |    1,000 |              1,000 | 1 second                                     |
-| `normal-burst`     |           100 |    5,000 |              5,000 | 10 seconds                                   |
-| `aggressive-burst` |           100 |    5,000 |              5,000 | 3 seconds                                    |
-| `extreme-burst`    |           100 |    5,000 |              5,000 | 1 second                                     |
-| `spike-10k`        |           100 |   10,000 |             10,000 | 1 second                                     |
+| ------------------ | ------------- | -------- | ------------------ | -------------------------------------------- |
+| `no-oversell`      | 10            | 100      | 100                | Synchronized release, writes within 1 second |
+| `duplicates`       | 10            | 100      | 10                 | Synchronized release, writes within 1 second |
+| `sufficient-stock` | 1,000         | 1,000    | 1,000              | 1 second                                     |
+| `normal-burst`     | 100           | 5,000    | 5,000              | 10 seconds                                   |
+| `aggressive-burst` | 100           | 5,000    | 5,000              | 3 seconds                                    |
+| `extreme-burst`    | 100           | 5,000    | 5,000              | 1 second                                     |
+| `spike-10k`        | 100           | 10,000   | 10,000             | 1 second                                     |
 
 These seven workloads define the planned stress suite. They separate request volume,
 distinct eligible buyers and successful-order volume. The duplicate workload

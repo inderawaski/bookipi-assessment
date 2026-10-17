@@ -14,6 +14,10 @@ The system uses TypeScript, Fastify, React + Vite, Redis and PostgreSQL. Redis L
 
 Admission returns after the Redis primary acknowledges execution, favoring low latency over crash-safe reservation durability. AOF every second and asynchronous replication can lose acknowledged reservations on Redis failure; only a committed PostgreSQL order represents final success. Surviving reservations can be retried after worker or database failures. Redis remains the single-sale admission bottleneck, status polling can lag, and the local deployment does not provide automatic failover or host/region redundancy.
 
+### Non-goals
+
+This prototype covers flash-sale admission, inventory correctness, and asynchronous order completion. It excludes general e-commerce features, payments and finance, business eligibility and fraud checks, fulfillment and refunds, third-party integrations, authentication/authorization, production security defenses, comprehensive UI/UX and frontend performance work, full production operations, and major disaster recovery.
+
 ### Comprehensive System Design
 
 > **[Read the complete system design →](docs/system-design.md)**
@@ -48,7 +52,7 @@ Start the API server, order workers, frontend and proxy:
 docker compose up --build -d --wait
 ```
 
-Open [the frontend](http://localhost:8080/?sale=flash-sale). The API is available through the same origin under `/api`; readiness is at [`/api/health/ready`](http://localhost:8080/api/health/ready). Enter a nonempty buyer identifier to purchase; each normalized identifier can receive one unit per sale.
+Open [the frontend](http://localhost:8080/?sale=flash-sale). The API is available through the same origin under `/api`; readiness is at `[/api/health/ready](http://localhost:8080/api/health/ready)`. Enter a nonempty buyer identifier to purchase; each normalized identifier can receive one unit per sale.
 
 The configuration command accepts `ID START_ISO END_ISO STOCK`. Existing sale times and initial stock cannot be changed. Use a new ID for another sale and open `/?sale=that-id`; an identical configuration can be retried safely.
 
