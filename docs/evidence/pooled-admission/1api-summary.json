@@ -1,0 +1,73 @@
+{
+  "project": "flash-test-cb92e65d-92d7-42fd-be68-a3e517ff4162",
+  "startedAt": "2026-10-17T02:19:07.802Z",
+  "apiReplicas": 1,
+  "workerReplicas": 1,
+  "settings": {
+    "connections": 10000,
+    "timeoutMs": 30000,
+    "drainTimeoutMs": 300000,
+    "dispatchWindowMs": 1000,
+    "scheduleWindowMs": 900
+  },
+  "validDispatch": true,
+  "invalidReasons": [],
+  "dispatchLastMs": 901.3827500000007,
+  "passed": true,
+  "runStatus": "valid_dispatch",
+  "error": null,
+  "orders": 100,
+  "admissions": 100,
+  "invariants": {
+    "noOversell": true,
+    "uniqueAllocations": true,
+    "stockConserved": true,
+    "mappingsMatch": true,
+    "uniqueOrders": true,
+    "drained": true,
+    "ordersMatchAdmissions": true,
+    "acknowledgedPreserved": true,
+    "admissionsWithinWindow": true,
+    "orderLatencyObserved": true,
+    "orderP99UnderTwoSeconds": true,
+    "allOrdersWithinTenSeconds": true,
+    "orderObserverHealthy": true,
+    "filled": true
+  },
+  "orderLatencyMs": {
+    "p50": 586.677978515625,
+    "p95": 771.867919921875,
+    "p99": 833.573974609375
+  },
+  "orderMaxMs": 834.572998046875,
+  "httpStatuses": {
+    "202": 100,
+    "409": 6428,
+    "429": 390,
+    "504": 3082
+  },
+  "perApiTiming": [
+    {
+      "replica": 1,
+      "completedHttpRequests": 6973,
+      "accumulatedHandlingSeconds": 16.627565834000038,
+      "meanHandlingMs": 2.3845641523017407
+    }
+  ],
+  "completedHttpRequests": 6973,
+  "accumulatedHandlingSeconds": 16.627565834000038,
+  "weightedApiMeanHandlingMs": 2.3845641523017407,
+  "clientMeanResponseMs": 3125.2263620988,
+  "clientResponseLatencyMs": {
+    "p50": 2385.3086669999993,
+    "p95": 6376.888625000001,
+    "p99": 6423.318332999999
+  },
+  "clientMeanByStatusMs": {
+    "202": 636.1954741599999,
+    "409": 2705.569395881612,
+    "429": 2702.4969588743593,
+    "504": 4134.740487632706
+  },
+  "pollErrors": []
+}

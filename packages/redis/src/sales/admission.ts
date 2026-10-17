@@ -19,7 +19,17 @@ export class AdmissionUncertainError extends Error {
 export async function admitPurchase(redis: { sendCommand(args: string[]): Promise<unknown> }, saleId: string, input: PurchaseInput): Promise<AdmissionResult> {
   const payload = normalizePurchase(saleId, input);
   try {
-    const result = await redis.sendCommand(['EVAL', admissionScript, '5', ...admissionKeys(payload.saleId), payload.identifier, payload.idempotencyKey, payload.saleId]);
+    const result = await redis.sendCommand(purchaseCommand(payload));
+    return parseAdmissionReply(result);
+  } catch (cause) {
+    // Even a timeout can mean the script committed. Never guess a business rejection.
+    throw new AdmissionUncertainError(cause);
+  }
+}
+
+/** Parse after returning the purchase connection to the pool. */
+export function parseAdmissionReply(result: unknown): AdmissionResult {
+  try {
     if (!Array.isArray(result)) throw new Error('Invalid admission result');
     const [status, key, timestamp, streamId, kind] = result;
     if (status === 'rejected' && ['upcoming', 'ended', 'sold_out', 'idempotency_conflict'].includes(key)) {
@@ -31,8 +41,8 @@ export async function admitPurchase(redis: { sendCommand(args: string[]): Promis
         (status === 'reserved' && kind !== 'new' && kind !== 'replay')) throw new Error('Invalid admission result');
     const reservation = { requestKey: key, admittedAtMs: Number(timestamp), streamId };
     return status === 'reserved' ? { status, reservation, replay: kind === 'replay' } : { status, reservation };
-  } catch (cause) {
-    // Even a timeout can mean the script committed. Never guess a business rejection.
-    throw new AdmissionUncertainError(cause);
-  }
+  } catch (cause) { throw new AdmissionUncertainError(cause); }
+}
+export function purchaseCommand(payload: PurchaseInput & { saleId: string }): string[] {
+  return ['EVAL', admissionScript, '5', ...admissionKeys(payload.saleId), payload.identifier, payload.idempotencyKey, payload.saleId];
 }

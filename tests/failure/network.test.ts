@@ -63,6 +63,7 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
       proxy = await loseReply(process.env.TEST_REDIS_URL!, 'EVAL', scenario === 'redis_partition');
       const uncertain = new RedisAdmission(proxy.url, 1, 2000);
       expect(await uncertain.place(sale.id, { identifier: 'person', idempotencyKey: 'key' })).toEqual({ status: 'PROCESSING', phase: 'confirming' });
+      uncertain.close();
       expect(proxy.dropped()).toBe(true);
     }
     expect(await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' })).toEqual({ status: 'PROCESSING', phase: 'queued' });
@@ -96,5 +97,5 @@ it.each(['redis_reply', 'redis_partition', 'commit_reply', 'postgres_restart'])(
     const directory = `test-results/failure/${process.env.TEST_PROJECT}`;
     await mkdir(directory, { recursive: true });
     await writeFile(`${directory}/${scenario}.json`, JSON.stringify({ scenario, saleId: sale.id, dropped: proxy?.dropped(), orders: orders.rows, remaining: 0, pending: 0 }, null, 2));
-  } finally { await proxy?.close(); await uncertainDatabase?.end(); redis.destroy(); await database.end(); }
+  } finally { gate.close(); await proxy?.close(); await uncertainDatabase?.end(); redis.destroy(); await database.end(); }
 }, 60000);

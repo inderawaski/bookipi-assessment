@@ -46,5 +46,5 @@ it.each(['before_lua', 'after_acknowledgement', 'rewrite'] as const)('SIGKILL at
     if (found.status === 'confirming') expect(found.diagnostic).toBe('missing_without_absence_proof');
     expect(await f.gate.place(f.sale.id, { identifier: 'person', idempotencyKey: 'key' })).toEqual({ status: 'PROCESSING', phase: 'queued' });
     expect(await f.redis.xLen(f.keys[4])).toBe(1);
-  } finally { if (f.redis.isOpen) f.redis.destroy(); }
+  } finally { f.gate.close(); if (f.redis.isOpen) f.redis.destroy(); }
 }, 60000);

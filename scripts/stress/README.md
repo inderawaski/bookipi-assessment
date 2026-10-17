@@ -75,3 +75,18 @@ Artifacts live under `test-results/stress/<project>/<scenario>/`. Use
 The measurements in [DEV-19 results](../../docs/stress-results.md) describe the
 previous barrier-based design and workloads and are historical evidence, not passes
 of this revised suite or current acknowledgement contract. The former 100,000-request scenarios are no longer required.
+
+## Optional arrival-window comparison
+
+`spike-10k-2s` explicitly selects the same 100-stock/10,000-unique-buyer spike
+with a 2,000-ms dispatch deadline and a 1,800-ms scheduled arrival span. It is
+excluded from the default suite. `spike-10k` retains its 1,000-ms deadline and
+900-ms scheduled span. Both retain p99 < 2,000 ms and maximum <= 10,000 ms order
+latency gates. The deadline is for request writes, not HTTP response completion.
+
+
+Services now use Fastify concurrency and Redis pool defaults. The previous
+`STRESS_ADMISSION_CONCURRENCY` experiment override has been removed; historical
+8/16/32 results remain in docs/redis-lease-sizing.md with their source snapshots.
+Use replica metrics to measure purchase lease/acquisition histograms, active
+HTTP/lease peaks and Redis acquisition expiry under the default policy.

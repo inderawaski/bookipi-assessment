@@ -1,0 +1,77 @@
+{
+  "project": "flash-test-cab46fc5-3a27-45ba-948c-5c61efc740d9",
+  "startedAt": "2026-10-17T03:42:33.163Z",
+  "apiReplicas": 2,
+  "workerReplicas": 1,
+  "settings": {
+    "connections": 10000,
+    "timeoutMs": 30000,
+    "drainTimeoutMs": 300000,
+    "dispatchWindowMs": 1000,
+    "scheduleWindowMs": 900
+  },
+  "validDispatch": true,
+  "invalidReasons": [],
+  "dispatchLastMs": 901.2081660000003,
+  "passed": true,
+  "runStatus": "valid_dispatch",
+  "error": null,
+  "orders": 100,
+  "admissions": 100,
+  "invariants": {
+    "noOversell": true,
+    "uniqueAllocations": true,
+    "stockConserved": true,
+    "mappingsMatch": true,
+    "uniqueOrders": true,
+    "drained": true,
+    "ordersMatchAdmissions": true,
+    "acknowledgedPreserved": true,
+    "admissionsWithinWindow": true,
+    "orderLatencyObserved": true,
+    "orderP99UnderTwoSeconds": true,
+    "allOrdersWithinTenSeconds": true,
+    "orderObserverHealthy": true,
+    "filled": true
+  },
+  "orderLatencyMs": {
+    "p50": 213.26708984375,
+    "p95": 358.4150390625,
+    "p99": 384.176025390625
+  },
+  "orderMaxMs": 384.176025390625,
+  "httpStatuses": {
+    "202": 100,
+    "409": 8351,
+    "429": 1549
+  },
+  "perApiTiming": [
+    {
+      "replica": 1,
+      "completedHttpRequests": 5013,
+      "accumulatedHandlingSeconds": 50.754915790999846,
+      "meanHandlingMs": 10.12465904468379
+    },
+    {
+      "replica": 2,
+      "completedHttpRequests": 5013,
+      "accumulatedHandlingSeconds": 51.92340677200007,
+      "meanHandlingMs": 10.357751201276695
+    }
+  ],
+  "completedHttpRequests": 10026,
+  "accumulatedHandlingSeconds": 102.67832256299991,
+  "weightedApiMeanHandlingMs": 10.241205122980242,
+  "clientMeanResponseMs": 419.2442511583,
+  "clientResponseLatencyMs": {
+    "p50": 56.568750000000364,
+    "p95": 1082.3894170000003,
+    "p99": 1123.8334169999998
+  },
+  "clientMeanByStatusMs": {
+    "202": 13.675718349999915,
+    "409": 489.16143977667343,
+    "429": 68.48789940154937
+  },
+  "pollErrors": []
+}

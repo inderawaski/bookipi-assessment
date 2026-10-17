@@ -28,7 +28,7 @@ it('fences unreconciled sales, confirms replay/duplicates/lookup, and gates work
     await expect(f.gate.confirmForWorker(f.sale.id, 'person', 'other', lookup.reservation.streamId)).rejects.toThrow('unconfirmed');
     expect(await f.redis.hGet(f.keys[0], 'remaining_stock')).toBe('1');
     expect(await f.redis.xLen(f.keys[4])).toBe(1);
-  } finally { f.redis.destroy(); }
+  } finally { f.gate.close(); f.redis.destroy(); }
 });
 it('never treats missing lookup as rejection, including a delayed admission executing afterward', async () => {
   const f = await fixture();
@@ -37,7 +37,7 @@ it('never treats missing lookup as rejection, including a delayed admission exec
     expect(await f.gate.lookup(f.sale.id, 'person')).toEqual({ status: 'confirming', diagnostic: 'missing_without_absence_proof' });
     await f.gate.place(f.sale.id, { identifier: 'person', idempotencyKey: 'delayed' });
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('present');
-  } finally { f.redis.destroy(); }
+  } finally { f.gate.close(); f.redis.destroy(); }
 });
 it('validates another connection reservation without advancing a durability checkpoint', async () => {
   const f = await fixture();
@@ -47,7 +47,7 @@ it('validates another connection reservation without advancing a durability chec
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('present');
     expect(await f.redis.hGet(f.keys[0], 'confirmation_checkpoint')).toBeNull();
     expect(await f.redis.xLen(f.keys[4])).toBe(1);
-  } finally { f.redis.destroy(); }
+  } finally { f.gate.close(); f.redis.destroy(); }
 });
 it('recovery preserves pending stock and refuses mismatched DB orders or queue data', async () => {
   const f = await fixture();
@@ -63,7 +63,7 @@ it('recovery preserves pending stock and refuses mismatched DB orders or queue d
     await f.gate.recover(f.sale, []);
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('present');
     expect(await f.redis.xLen(f.keys[4])).toBe(1);
-  } finally { f.redis.destroy(); }
+  } finally { f.gate.close(); f.redis.destroy(); }
 });
 it('validates matching DB orders and refuses expiring allocation state', async () => {
   const f = await fixture();
@@ -75,7 +75,7 @@ it('validates matching DB orders and refuses expiring allocation state', async (
     await f.redis.pExpire(f.keys[3], 60000);
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('confirming');
     await expect(f.gate.recover(f.sale, [])).rejects.toThrow('invalid accounting');
-  } finally { f.redis.destroy(); }
+  } finally { f.gate.close(); f.redis.destroy(); }
 });
 
 it('keeps a validated epoch visible while another replica prepares recovery', async () => {
@@ -100,7 +100,7 @@ it('keeps a validated epoch visible while another replica prepares recovery', as
     expect(await f.redis.hGet(f.keys[0], 'remaining_stock')).toBe('1');
     expect(await f.redis.xLen(f.keys[4])).toBe(1);
     expect(await f.redis.hGet(f.keys[0], 'admission_fault')).toBeNull();
-  } finally { release(); await recovery; f.redis.destroy(); }
+  } finally { release(); await recovery; peer.close(); f.gate.close(); f.redis.destroy(); }
 }, 15000);
 
 it('fences configuration mismatches atomically without releasing reservations', async () => {
@@ -114,7 +114,7 @@ it('fences configuration mismatches atomically without releasing reservations', 
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('confirming');
     await f.gate.recover(f.sale, []);
     expect((await f.gate.lookup(f.sale.id, 'person')).status).toBe('present');
-  } finally { f.redis.destroy(); }
+  } finally { f.gate.close(); f.redis.destroy(); }
 });
 
 it('leaves missing pre-sale state configurable after a failed reconciliation', async () => {
@@ -128,5 +128,5 @@ it('leaves missing pre-sale state configurable after a failed reconciliation', a
     await f.gate.recover(sale, []);
     expect(await f.redis.hGet(key, 'recovered_run')).not.toBeNull();
     expect(await f.redis.hGet(key, 'remaining_stock')).toBe('2');
-  } finally { f.redis.destroy(); }
+  } finally { f.gate.close(); f.redis.destroy(); }
 });

@@ -45,7 +45,7 @@ it('exposes real admission, normalization, retries, delayed state and committed 
     expect((await app.inject(`${base}/order?identifier=unknown`)).statusCode).toBe(503);
     await database.end();
     expect((await app.inject(`${base}/order?identifier=person`)).json()).toEqual({ status: 'UNAVAILABLE', reason: 'unavailable' });
-  } finally { await app.close(); if (redis.isOpen) redis.destroy(); if (!database.ended) await database.end(); }
+  } finally { admission.close(); await app.close(); if (redis.isOpen) redis.destroy(); if (!database.ended) await database.end(); }
 }, 30000);
 it('replays an admitted result after closing and distinguishes upcoming and ended', async () => {
   const { database, redis } = testServices();
@@ -78,7 +78,7 @@ it('replays an admitted result after closing and distinguishes upcoming and ende
     expect((await app.inject(`/sales/${id}`)).json()).toMatchObject({ status: 'ENDED' });
     expect((await app.inject({ method: 'POST', url: `/sales/${id}/purchases`, payload: { identifier: 'other', idempotencyKey: 'late' } })).json()).toEqual({ status: 'REJECTED', reason: 'ended' });
     expect(await redis.xLen(keys[4])).toBe(1);
-  } finally { await app.close(); redis.destroy(); await database.end(); }
+  } finally { admission.close(); await app.close(); redis.destroy(); await database.end(); }
 }, 20000);
 
 it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or duplicating its allocation', async () => {
@@ -106,7 +106,7 @@ it('exposes unconfirmed admission as retryable NOT_ORDERED without losing or dup
     expect(await redis.xLen(keys[4])).toBe(1);
     expect(await redis.hLen(keys[3])).toBe(1);
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
-  } finally { await app.close(); redis.destroy(); await database.end(); }
+  } finally { admission.close(); await app.close(); redis.destroy(); await database.end(); }
 }, 20000);
 
 it('admits from preloaded Redis configuration during a PostgreSQL outage and retains Lua fences', async () => {
@@ -145,5 +145,5 @@ it('admits from preloaded Redis configuration during a PostgreSQL outage and ret
     expect((await post()).json()).toEqual(uncertain);
     expect(await redis.xLen(keys[4])).toBe(1);
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
-  } finally { await app.close(); if (redis.isOpen) redis.destroy(); if (!database.ended) await database.end(); }
+  } finally { admission.close(); await app.close(); if (redis.isOpen) redis.destroy(); if (!database.ended) await database.end(); }
 }, 20000);

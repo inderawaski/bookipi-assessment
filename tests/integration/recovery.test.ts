@@ -8,13 +8,13 @@ import { testServices } from '../services.js';
 it('retains exhausted allocation, replays once, repairs missing work and completion, and fences unknown schema', async () => {
   const { redis, database } = testServices();
   await redis.connect();
+  const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   try {
     await migrate(database);
     const sale = { id: randomUUID(), startsAt: new Date(Date.now()-60000).toISOString(), endsAt: new Date(Date.now()+60000).toISOString(), initialStock: 1 };
     await persistSale(database, sale);
     const keys = admissionKeys(sale.id), prefix = saleKey(sale.id);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
-    const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
     const entry = (await redis.xRange(keys[4], '-', '+'))![0]!;
@@ -48,7 +48,7 @@ it('retains exhausted allocation, replays once, repairs missing work and complet
     await redis.hSet(keys[0], 'configuration_version', '99');
     await expect(gate.recover(sale, [])).rejects.toThrow();
     expect((await gate.lookup(sale.id, 'person')).status).toBe('confirming');
-  } finally { redis.destroy(); await database.end(); }
+  } finally { gate.close(); redis.destroy(); await database.end(); }
 }, 30000);
 
 it('exhausts during database outage and resumes once after repeated replay and worker restart', async () => {
@@ -56,13 +56,13 @@ it('exhausts during database outage and resumes once after repeated replay and w
   const unavailable = createDatabase('postgresql://unused:unused@127.0.0.1:1/unused', 1, 100);
   await redis.connect();
   let stop: (() => Promise<void>) | undefined;
+  const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   try {
     await migrate(database);
     const sale = { id: randomUUID(), startsAt: new Date(Date.now()-60000).toISOString(), endsAt: new Date(Date.now()+60000).toISOString(), initialStock: 1 };
     await persistSale(database, sale);
     const keys = admissionKeys(sale.id), prefix = saleKey(sale.id);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '1', remaining_stock: '1', configuration_version: '1' });
-    const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
     const entry = (await redis.xRange(keys[4], '-', '+'))![0]!;
@@ -89,5 +89,5 @@ it('exhausts during database outage and resumes once after repeated replay and w
     expect((await database.query('SELECT id FROM "order" WHERE flash_sale_id=$1', [sale.id])).rowCount).toBe(1);
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
     expect(await replayOrder(redis, sale.id, entry.id)).toBe(0);
-  } finally { await stop?.(); redis.destroy(); await unavailable.end(); await database.end(); }
+  } finally { await stop?.(); gate.close(); redis.destroy(); await unavailable.end(); await database.end(); }
 }, 30000);

@@ -172,3 +172,20 @@ On 16 October 2026, `pnpm lint`, `pnpm typecheck`, `pnpm build`, both demonstrat
 Redis-only purchase admission follow-up: [verification and spike evidence](redis-only-admission-results.md). The route regression asserts no database/probe calls; integration covers a closed/exhausted PostgreSQL pool and retained Lua fences.
 
 Sale metadata cache: [read flow, safety and verification](sale-configuration-cache.md).
+
+Redis admission pooling: [implementation, safety checks and spike evidence](pooled-admission-results.md).
+
+Waitable Redis admission acquisition: [current library-default policy and historical 10-ms measurements](waitable-admission-pool.md).
+
+
+Redis lease sizing instrumentation covers purchase acquisition/lease histograms,
+active peak and expiry counters. The overload integration suite verifies a single
+connection is released before post-reply processing finishes; crash/network tests
+retain acknowledgement uncertainty coverage across the new boundary.
+
+[Measured pool sizing and archived verification](redis-lease-sizing.md) compares
+8/16/32 connections per API with separate acquisition and purchase lease metrics.
+
+
+Current [framework default concurrency policy and verification](framework-default-policy.md)
+supersedes the HTTP guard and fixed service pool sizes in historical benchmarks.

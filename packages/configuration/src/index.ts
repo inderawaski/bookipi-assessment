@@ -29,8 +29,6 @@ export function parseConfiguration(env: Environment, service: 'api' | 'worker') 
     host, port: integer(env, service === 'api' ? 'API_PORT' : 'WORKER_PORT', service === 'api' ? 3000 : 3001),
     databaseUrl: endpoint(env, 'DATABASE_URL', ['postgres:', 'postgresql:']),
     redisUrl: endpoint(env, 'REDIS_URL', ['redis:', 'rediss:']),
-    httpConcurrency: integer(env, 'HTTP_CONCURRENCY', 64, 4096),
-    admissionConcurrency: integer(env, 'ADMISSION_CONCURRENCY', 16, 1024),
     admissionTimeoutMs: integer(env, 'ADMISSION_TIMEOUT_MS', 3000, 30000),
     databasePoolSize: integer(env, 'DATABASE_POOL_SIZE', 10, 100),
     retryPolicy: {

@@ -82,5 +82,5 @@ it.each([
     const directory = `test-results/failure/${process.env.TEST_PROJECT}`;
     await mkdir(directory, { recursive: true });
     await writeFile(`${directory}/${mode}-${boundary}.json`, JSON.stringify({ saleId: sale.id, trace, signal: 'SIGKILL', orders: orders.rows, reservations: 1, remaining: 0, pending: 0 }, null, 2));
-  } finally { redis.destroy(); await database.end(); }
+  } finally { gate.close(); redis.destroy(); await database.end(); }
 }, 30000);

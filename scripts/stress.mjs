@@ -13,13 +13,14 @@ const requestedConnections = Number(process.env.STRESS_CONNECTIONS || Math.min(1
 if (!Number.isInteger(requestedConnections) || requestedConnections < 1 || requestedConnections > maxConnections) throw new Error('Connections must be 1..STRESS_MAX_CONNECTIONS');
 const apiReplicas = Number(process.env.STRESS_API_REPLICAS || 1);
 const workerReplicas = Number(process.env.STRESS_WORKER_REPLICAS || 1);
-if (![apiReplicas, workerReplicas].every(n => Number.isInteger(n) && n >= 1 && n <= 8)) throw new Error('Replica counts must be 1..8');
+if (!Number.isInteger(apiReplicas) || apiReplicas < 1 || apiReplicas > 10 ||
+    !Number.isInteger(workerReplicas) || workerReplicas < 1 || workerReplicas > 8) throw new Error('API replicas must be 1..10; worker replicas must be 1..8');
 if (selected.some(name => !scenarios.some(s => s.name === name))) throw new Error('Unknown scenario');
 const build = spawnSync('pnpm', ['--filter', './packages/**', 'build'], { stdio: 'inherit' });
 if (build.status !== 0) throw new Error('Build failed');
 const commit = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
 const dirty = spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).stdout;
-const jobs = scenarios.filter(s => !selected.length || selected.includes(s.name)).map(scenario => ({ scenario, connections: Math.min(scenario.requests, requestedConnections) }));
+const jobs = scenarios.filter(s => selected.length ? selected.includes(s.name) : !s.optional).map(scenario => ({ scenario, connections: Math.min(scenario.requests, requestedConnections) }));
 for (const { scenario, connections } of jobs) {
   const project = `flash-test-${randomUUID()}`;
   const output = resolve(`test-results/stress/${project}/${scenario.name}`);

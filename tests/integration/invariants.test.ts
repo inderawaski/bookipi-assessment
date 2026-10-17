@@ -90,6 +90,7 @@ it('accounts independently for acknowledged admissions across two APIs and worke
   } finally {
     vi.restoreAllMocks();
     while (stops.length) await stops.pop()!();
+    gates.forEach(gate => gate.close());
     await Promise.all(apps.map(app => app.close()));
     if (redis.isOpen) redis.destroy(); await database.end();
   }

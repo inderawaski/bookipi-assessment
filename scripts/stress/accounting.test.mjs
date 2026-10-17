@@ -164,3 +164,11 @@ test('generator honors synchronized release and custom arrival windows over real
   assert.deepEqual(synchronized.records.map(r => r.scheduledMs), [0, 0, 0]);
   assert.equal(synchronized.validDispatch, true);
 });
+
+test('optional two-second spike changes arrival window while preserving stock and order gates', () => {
+  const baseline = scenarios.find(s => s.name === 'spike-10k');
+  const comparison = scenarios.find(s => s.name === 'spike-10k-2s');
+  assert.equal(comparison.optional, true);
+  assert.equal(comparison.dispatchWindowMs, 2000);
+  for (const field of ['stock', 'requests', 'identifiers', 'expectFill', 'orderSlo']) assert.equal(comparison[field], baseline[field]);
+});

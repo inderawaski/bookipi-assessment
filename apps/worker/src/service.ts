@@ -2,18 +2,18 @@ import { Metrics, registerOperations, singleFlightProbe } from '@flash/operation
 import { createOrderConsumer } from './orders/consumer.js';
 import { createHealthServer } from './health.js';
 import { createDatabase, listSales } from '@flash/database';
-import { createRedisConnection, assertRedisSafety, assertAdmissionConfiguration, RedisAdmission, cachedSaleConfigurations, saleKey } from '@flash/redis';
+import { createRedisConnection, assertRedisHealth, assertAdmissionConfiguration, RedisAdmission, cachedSaleConfigurations, saleKey } from '@flash/redis';
 import { parseConfiguration } from '@flash/configuration';
 export async function startService(service: 'api' | 'worker') {
   const config = parseConfiguration(process.env, service);
   const database = createDatabase(config.databaseUrl, config.databasePoolSize, config.dependencyTimeoutMs);
   const redis = createRedisConnection(config.redisUrl, 'commands', config.dependencyTimeoutMs);
   const metrics = new Metrics();
-  const admission = new RedisAdmission(config.redisUrl, config.admissionConcurrency, config.admissionTimeoutMs);
+  const admission = new RedisAdmission(config.redisUrl, undefined, config.admissionTimeoutMs, undefined, metrics);
   const recoveredRuns = new Map<string, string>();
   const probe = singleFlightProbe(async () => {
     if (!redis.isReady) await redis.connect();
-    await Promise.all([database.query('SELECT 1'), assertRedisSafety(redis)]);
+    await Promise.all([database.query('SELECT 1'), assertRedisHealth(redis)]);
     // An unmigrated bootstrap has no sales. Once present, every configuration must match.
     const schema = await database.query("SELECT to_regclass('public.flash_sale') AS name");
     if (schema.rows[0]?.name) {
@@ -44,7 +44,7 @@ export async function startService(service: 'api' | 'worker') {
     }
   });
   const app = createHealthServer(probe);
-  registerOperations(app, metrics, config.httpConcurrency, async () => {
+  registerOperations(app, metrics, async () => {
     let backlog = 0, pending = 0, delayed = 0;
     for (const id of recoveredRuns.keys()) {
       const key = saleKey(id);
@@ -59,11 +59,12 @@ export async function startService(service: 'api' | 'worker') {
     metrics.set('database_pool_waiting', database.waitingCount);
     metrics.set('database_pool_connections', database.totalCount);
   });
-  app.log.info({ service, httpConcurrency: config.httpConcurrency, admissionConcurrency: config.admissionConcurrency, admissionTimeoutMs: config.admissionTimeoutMs, databasePoolSize: config.databasePoolSize }, 'Operational limits');
+  app.log.info({ service, httpPolicy: 'fastify-default', redisPoolPolicy: 'library-default', admissionTimeoutMs: config.admissionTimeoutMs, databasePoolSize: config.databasePoolSize }, 'Operational limits');
   const consumer: { stop?: () => Promise<void> } = {};
-  app.addHook('onClose', async () => { await consumer.stop?.(); if (redis.isOpen) redis.destroy(); await database.end(); });
+  app.addHook('onClose', async () => { await consumer.stop?.(); admission.close(); if (redis.isOpen) redis.destroy(); await database.end(); });
   try {
     await probe();
+    await admission.connect();
     consumer.stop = await createOrderConsumer(config.redisUrl, database, admission,
     async () => [...recoveredRuns.keys()],
     () => app.log.error('Order processing failed; pending work retained'), config.retryPolicy, metrics);

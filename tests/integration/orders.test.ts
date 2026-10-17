@@ -8,13 +8,13 @@ import { testServices } from '../services.js';
 it('persists once across concurrent deliveries, repeats completion/ack and quarantines conflicts', async () => {
   const { redis, database } = testServices();
   await redis.connect();
+  const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
   try {
     await migrate(database);
     const sale = { id: randomUUID(), startsAt: new Date(Date.now() - 60000).toISOString(), endsAt: new Date(Date.now() + 60000).toISOString(), initialStock: 2 };
     await persistSale(database, sale);
     const keys = admissionKeys(sale.id);
     await redis.hSet(keys[0], { starts_at: String(Date.parse(sale.startsAt)), ends_at: String(Date.parse(sale.endsAt)), initial_stock: '2', remaining_stock: '2', configuration_version: '1' });
-    const gate = new RedisAdmission(process.env.TEST_REDIS_URL!);
     await gate.recover(sale, []);
     await gate.place(sale.id, { identifier: 'person', idempotencyKey: 'key' });
     const stream = admissionKeys(sale.id)[4];
@@ -35,5 +35,5 @@ it('persists once across concurrent deliveries, repeats completion/ack and quara
     await processOrder(database, redis, gate, sale.id, { ...entry, message: { ...entry.message, admitted_at_ms: String(timestamp + 1) } });
     expect(await redis.hExists(`${saleKey(sale.id)}:quarantine`, entry.id)).toBe(1);
     expect((await database.query('SELECT id FROM "order" WHERE flash_sale_id = $1', [sale.id])).rowCount).toBe(1);
-  } finally { redis.destroy(); await database.end(); }
+  } finally { gate.close(); redis.destroy(); await database.end(); }
 });

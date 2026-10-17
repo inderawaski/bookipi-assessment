@@ -18,16 +18,13 @@ export class Metrics {
 }
 export function correlation(value: string) { return createHash('sha256').update(value).digest('hex').slice(0, 24); }
 
-export function registerOperations(app: FastifyInstance, metrics: Metrics, limit: number,
+export function registerOperations(app: FastifyInstance, metrics: Metrics,
   sample: () => Promise<void> = async () => {}) {
-  let active = 0;
+  let active = 0, peak = 0;
   const held = new WeakSet<object>();
-  app.addHook('onRequest', async (request, reply) => {
-    if (active >= limit) {
-      metrics.add('http_busy_total');
-      return reply.header('Retry-After', '1').code(429).send({ status: 'REJECTED', reason: 'busy' });
-    }
-    active++; held.add(request);
+  app.addHook('onRequest', async request => {
+    active++; peak = Math.max(peak, active); held.add(request);
+    metrics.set('http_active_peak', peak);
     metrics.set('http_active', active);
   });
   // onSend runs after the handler even when the socket has disconnected.

@@ -181,3 +181,97 @@ Committed orders are read first, preserving SUCCESS when Redis is unavailable.
 The deployed Redis primary is supported; global metadata keys do not add Cluster
 support. Cold fills can race and duplicate DB reads, but stale publication is
 prevented; no distributed lock or background cache-refresh mechanism is added.
+
+## Reuse Redis admission connections and move safety checks off purchases (17 October 2026)
+
+Exclusive socket ownership is useful: a timeout can discard one socket without
+invalidating another operation or consuming a late reply as another request's
+result. Creating/destroying that socket for every immediate-acknowledgement
+purchase is unnecessary. RedisAdmission now uses a bounded pool of exclusive
+leases, retaining the 16-operation limit, deadline, no waiting queue, disabled
+offline buffering and no automatic command replay. APIs warm their pool before
+listening; workers warm one connection. Error/timeout sockets are discarded and
+replaced on demand; normal results reuse the connection. Shutdown closes the pool.
+
+CONFIG GET and INFO persistence are useful deployment/health checks, but making
+them sequential prerequisites for every Lua operation adds avoidable network
+work. Startup and periodic readiness retain both checks on the control connection.
+Warm admission and lookup now issue only their Lua command. The Lua restart epoch,
+configuration/accounting/TTL/type checks, fault latch, idempotency and stock rules
+remain unchanged, as do provisional acknowledgements and the PostgreSQL stock cap.
+
+This trades per-operation detection of live Redis configuration/write-health
+changes for periodic health detection. Already-running purchases do not synchronously
+wait for that probe; infrastructure can withdraw APIs whose readiness fails.
+Operators must preserve the required Redis policy during traffic. This does not
+change the accepted acknowledgement-loss trade-off or add automatic failover.
+
+## FIFO Redis connection acquisition, 10-ms wait (user approved, 17 October 2026)
+
+An immediately full Redis pool no longer rejects purchases at once. Acquisitions
+queue FIFO within each API process, with a 10-ms budget. Released or replacement
+sockets are assigned to the oldest non-expired waiter before later requests.
+The pool rechecks a monotonic deadline at handoff, so a delayed timeout callback
+cannot allow an expired purchase to execute. Expiry returns REJECTED/busy without
+a Lua call, stock reservation or idempotency binding. Shutdown cancels waiters.
+
+The existing three-second operation deadline starts after acquisition, independently
+of the 10-ms wait. The request holds its HTTP slot while waiting; the existing
+64-request HTTP guard remains immediate. This change provides FIFO acquisition
+within an API, not global arrival-order fairness across APIs or strict execution
+ordering across parallel Redis connections. Redis execution remains admission
+authority. Requests that exceed the short wait may still be rejected before later
+arrivals; the timeout is a bounded opportunity to wait, not guaranteed service.
+
+The selected 10 ms is the approved business budget, motivated by an assumed
+2-ms operation and four waves of HTTP work. Average latency does not guarantee
+four waves finish inside that budget: tail latency and event-loop/network scheduling
+still matter. No concurrency, HTTP limit, order SLO, stock-cap or durability
+acknowledgement policy changed.
+
+
+## Built-in Redis pool with default acquisition timeout (user approved, 17 October 2026)
+
+Supersedes the custom FIFO queue and its 10-ms acquisition budget. Use the existing
+redis@6.3.0 createClientPool, configure pool size/warm count, and omit acquireTimeout
+so the library owns acquisition waiting and its timeout (currently 3,000 ms).
+No dependency upgrade is needed. Acquisition expiry before callback execution
+returns busy without binding a request key or reserving stock.
+
+The separate three-second operation deadline, disabled offline queue/reconnection,
+uncertain-outcome handling and immediate 64-request HTTP guard remain. Waiting
+requests hold HTTP slots longer than under the previous 10-ms budget. Acquisition
+and operation can each consume approximately three seconds, so combined elapsed
+time can exceed Nginx's five-second upstream read timeout. A gateway timeout remains
+an uncertain outcome; it must not be treated as proof that no order was admitted.
+Library timer scheduling supplies the acquisition deadline; the previous custom
+monotonic handoff deadline check is removed. FIFO is local to a pool and does not
+provide global buyer ordering.
+
+The wrapper retains operation cancellation and shutdown handling. Failed/timed-out
+connections are destroyed, then explicitly reconnected only on a new lease. An
+aborted per-operation client proxy prevents delayed old callbacks from sending
+commands after that reconnect. Shutdown resolves callers immediately as uncertain,
+blocks queued callbacks from executing Lua and destroys sockets; library acquisition
+timers eventually remove its queued tasks. Historical spike reports remain attached
+to their original source snapshots. No new spike measurement is claimed here.
+
+
+## Framework default concurrency policies (user approved, 17 October 2026)
+
+Remove the application HTTP concurrency rejection guard. Continue observing
+active requests and peak concurrency without enforcing a cap. Services use the
+Redis built-in pool with no pool options: installed redis@6.3.0 defaults are
+minimum 1, maximum 100, acquisition timeout 3 seconds and idle cleanup delay
+3 seconds. Services warm only the default minimum. These replace the 64-request
+HTTP guard and 16-connection application pool setting; remove HTTP_CONCURRENCY,
+ADMISSION_CONCURRENCY and the stress pool-size override from active configuration.
+Small explicit pool maxima remain test-mode-only fixture controls.
+
+Busy now comes from Redis acquisition expiry, not a local HTTP-slot check. Waiting
+is governed by the library rather than an application concurrency cap. Existing
+operation deadline, uncertainty semantics, disabled offline buffering/automatic
+replay, shutdown cancellation, body limits and network timeouts remain. This is
+a concurrency-policy change, not a durability or stock-accounting change. The
+previous measured sizing runs remain historical and do not establish performance
+under defaults. Acquisition plus operation can still outlive the gateway timeout.

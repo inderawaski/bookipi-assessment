@@ -83,15 +83,33 @@ promotion, client failover or separate-host redundancy is implemented. Primary
 restart can resynchronize the replica to older data; replica presence does not
 make an acknowledged write loss-proof.
 
-### Bounded admission and validation
+### Admission concurrency and validation
 
-[RedisAdmission](../packages/redis/src/sales/acknowledgement.ts) takes one of 16
-concurrent slots per service before opening an operation-owned socket. The
-3,000-ms deadline covers connection, validation and Lua. There is no waiting
-queue, offline buffering or automatic command replay. Other application/HTTP
-limits are unchanged; 16 slots are a concurrency bound, not a requests/second rate.
+[RedisAdmission](../packages/redis/src/sales/acknowledgement.ts) uses the installed
+Redis client's built-in pool without size, acquisition or cleanup overrides.
+In redis@6.3.0 the defaults are minimum 1, maximum 100, acquireTimeout 3,000 ms
+and cleanupDelay 3,000 ms. Services connect the default minimum at startup and
+the library grows/shrinks the pool. Explicit smaller maxima are available only
+in test-mode fixtures to exercise contention deterministically.
 
-Each operation checks AOF everysec/noeviction configuration and write health.
+There is no application HTTP concurrency guard or immediate HTTP-slot busy
+response. Fastify handles incoming requests under its normal policy; HTTP active
+and peak metrics are observational. Requests awaiting Redis remain in flight.
+Redis acquisition expiry returns busy before Lua executes. A separate 3,000-ms
+operation deadline starts after acquisition and covers reconnecting and Lua.
+Failed/timed-out sockets are destroyed; a later lease explicitly reconnects the
+client. Per-operation cancellation prevents delayed callbacks sending after timeout.
+Shutdown rejects callers, prevents queued callbacks sending and destroys sockets;
+remaining queued library tasks expire or are drained without executing admission.
+Offline buffering and automatic command replay remain disabled. HTTP receipt,
+connection and gateway timeouts and request-size limits remain unchanged.
+
+Startup and periodic readiness check AOF everysec/noeviction configuration and
+write health through a separate control connection. Warm purchase/lookup operations
+issue only their Lua command; they do not perform CONFIG GET or INFO persistence.
+Every Lua operation still checks the current primary epoch and sale-state fences.
+A runtime persistence-policy change is detected on readiness rather than every
+purchase; operators must keep the configured Redis policy stable.
 [Lookup validation](../packages/redis/src/sales/state-scripts.ts) checks the epoch
 fence, fault latch, absence of TTLs, mappings, reservation and stream payload. It
 is a validation of current primary state, not durability evidence. Workers perform
@@ -227,3 +245,21 @@ clears recovery fences. Readiness still validates live admission configuration a
 current epoch/fault state. A committed order is queried first and remains readable
 without Redis. These global cache/revision keys target the deployed single Redis
 primary; configuration/cache scripts are not Redis Cluster implementations.
+
+
+### Redis lease measurements
+
+API and worker admission pools expose per-operation acquisition-wait and lease
+histograms through /metrics (purchase, lookup and recovery), plus exact count,
+sum and observed maximum. Pool active/peak gauges and acquisition-expiry counters
+separate connection pressure from the independent HTTP busy counter. Histograms
+use 0.25-ms buckets through 20 ms and wider tail buckets; percentile bucket limits
+are upper bounds, not exact sample percentiles. Instrumentation adds overhead.
+
+Purchase command construction happens before acquisition. The purchase lease covers
+optional socket reconnection and sending/awaiting Lua; application reply validation,
+parsing and response construction happen after release. Redis wire-protocol decoding
+necessarily remains in the client before sendCommand resolves. Lease timing ends
+at callback cleanup, immediately before the built-in pool returns the socket;
+the few following promise microtasks are not separately timed. The three-second
+operation deadline covers the lease, while acquisition keeps the library default.

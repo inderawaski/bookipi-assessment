@@ -28,7 +28,7 @@ it('reports a lost acknowledged reservation as NOT_ORDERED and permits same-key 
     expect((await post()).json()).toEqual({ status: 'PROCESSING', phase: 'queued' });
     expect(await redis.xLen(keys[4])).toBe(1);
     expect(await redis.hGet(keys[0], 'remaining_stock')).toBe('0');
-  } finally { await app.close(); redis.destroy(); await database.end(); }
+  } finally { admission.close(); await app.close(); redis.destroy(); await database.end(); }
 }, 20000);
 
 it('caps committed orders when an in-flight commit crosses Redis reservation loss and recovery', async () => {
@@ -69,5 +69,5 @@ it('caps committed orders when an in-flight commit crosses Redis reservation los
     expect((await redis.xPending(keys[4], orderGroup)).pending).toBe(1);
     expect((await admission.lookup(sale.id, 'second')).status).toBe('confirming');
     await expect(admission.recover(sale, [{ orderId: firstId, identifier: 'first', admittedAtMs: identity.admittedAtMs }])).rejects.toThrow('invalid accounting');
-  } finally { release(); await first?.catch(() => {}); redis.destroy(); await database.end(); }
+  } finally { release(); await first?.catch(() => {}); admission.close(); redis.destroy(); await database.end(); }
 }, 20000);

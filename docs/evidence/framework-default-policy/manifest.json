@@ -1,0 +1,162 @@
+[
+  {
+    "path": "unit.log.gz",
+    "originalBytes": 4773,
+    "sha256": "973418832375efb71d477451ef5b1077936c8773bd3f3474e4147e4e96697a72"
+  },
+  {
+    "path": "integration.log.gz",
+    "originalBytes": 25805,
+    "sha256": "dfd83f92f172f6e78430300e897a8f945d83469cde1e2ceba18e3b1fb323538e"
+  },
+  {
+    "path": "failure.log.gz",
+    "originalBytes": 7831,
+    "sha256": "0bd1562d4a0e09723d2a72a9178a27342eb9e111fe69407aa2f67a459bae6b7e"
+  },
+  {
+    "path": "typecheck.log.gz",
+    "originalBytes": 1243,
+    "sha256": "4c6fbe40401e3051e8a2f9fe0b1093f8dd56eeb2239994cdc62ec6634eb3ab67"
+  },
+  {
+    "path": "lint.log.gz",
+    "originalBytes": 11,
+    "sha256": "050c69da23536758722729aeda55a8d0fb9d557495ef6d33d70873a3b64a71c1"
+  },
+  {
+    "path": "build.log.gz",
+    "originalBytes": 1115,
+    "sha256": "b8b68d0d8235a00f3ca57645773a24ddb6e7d235fc12efdab008d4e8b282cab6"
+  },
+  {
+    "path": "harness.log.gz",
+    "originalBytes": 4828,
+    "sha256": "0901c062d0d9112443f35ac1c3444a80d65372eb12c55723ca23a3663b4967d3"
+  },
+  {
+    "path": "implementation-sources.json.gz",
+    "originalBytes": 442872,
+    "sha256": "783bd7431d201e7322cd9e5b1f2dca69d62fd0d360d37ead5ded4b3cc1834c7a"
+  },
+  {
+    "path": "flash-test-c8f3f8a0-4404-4e1a-ae0c-efbe503f48de/spike-10k/compose.yaml.gz",
+    "originalBytes": 5659,
+    "sha256": "1e5e6d1915a14c5e9b7e972f6d86c2486f521dca767567863e4da13e50d5701f"
+  },
+  {
+    "path": "flash-test-c8f3f8a0-4404-4e1a-ae0c-efbe503f48de/spike-10k/host.json.gz",
+    "originalBytes": 39181,
+    "sha256": "535aabf51f6ba122c801fac6e5050884de8c1acd9f8d0d6893b2088f4b20e03d"
+  },
+  {
+    "path": "flash-test-c8f3f8a0-4404-4e1a-ae0c-efbe503f48de/spike-10k/network-after.txt.gz",
+    "originalBytes": 26046,
+    "sha256": "3c031645b6f874612973a4c4224e9f13087416df271fe4e838b25af387996f5f"
+  },
+  {
+    "path": "flash-test-c8f3f8a0-4404-4e1a-ae0c-efbe503f48de/spike-10k/resources.jsonl.gz",
+    "originalBytes": 56460,
+    "sha256": "0c908b0f748cd59ab614b8bda9d9cc2eddad198755697a1bc85fda980c886c26"
+  },
+  {
+    "path": "flash-test-c8f3f8a0-4404-4e1a-ae0c-efbe503f48de/spike-10k/result.json.gz",
+    "originalBytes": 4184981,
+    "sha256": "0868ff514928d60d190729f944e7630affe60c31af548790ef4bd2563666e297"
+  },
+  {
+    "path": "flash-test-c8f3f8a0-4404-4e1a-ae0c-efbe503f48de/spike-10k/services.log.gz",
+    "originalBytes": 2772795,
+    "sha256": "739e26c04082be7d3f1cea771c58213392a889b4c3b5ba265602d6f723bc6499"
+  },
+  {
+    "path": "flash-test-c8f3f8a0-4404-4e1a-ae0c-efbe503f48de/spike-10k/sources.json.gz",
+    "originalBytes": 38217,
+    "sha256": "3f96907ac8a2d108d186d71842762be75a4262a3716f493906e7bb9a39bc63b3"
+  },
+  {
+    "path": "flash-default-policy-1api-spike.log.gz",
+    "originalBytes": 604,
+    "sha256": "d021a9e389914475b8cbe9daeca2485cecd07a4c458314ac4e3fb8b3e53390a8"
+  },
+  {
+    "path": "flash-test-cbfd64a6-1239-4177-bfd1-832b362718a8/spike-10k/compose.yaml.gz",
+    "originalBytes": 5659,
+    "sha256": "182831f405b4932f3013b5547b377f13b2a84a8cee87c9041a5b5ef76237830d"
+  },
+  {
+    "path": "flash-test-cbfd64a6-1239-4177-bfd1-832b362718a8/spike-10k/host.json.gz",
+    "originalBytes": 39256,
+    "sha256": "68ed6cb75dcdafabddd3b9e8a460bf8c6a8e78601aa2ea1d6b6a5a9001af3083"
+  },
+  {
+    "path": "flash-test-cbfd64a6-1239-4177-bfd1-832b362718a8/spike-10k/network-after.txt.gz",
+    "originalBytes": 26043,
+    "sha256": "e2bab5cf3a7049ede177368e5892907b3126f98337b212ea3da01cf3871c1daa"
+  },
+  {
+    "path": "flash-test-cbfd64a6-1239-4177-bfd1-832b362718a8/spike-10k/resources.jsonl.gz",
+    "originalBytes": 58350,
+    "sha256": "14376287efd6fbbf63dd54c7eb86ff34651974dd59522b30059c4a2ff6273205"
+  },
+  {
+    "path": "flash-test-cbfd64a6-1239-4177-bfd1-832b362718a8/spike-10k/result.json.gz",
+    "originalBytes": 4375165,
+    "sha256": "79d772c387fd821c8e498e5c0a6d3c34ea3dbf347d11e79fe54a0fbdb137c296"
+  },
+  {
+    "path": "flash-test-cbfd64a6-1239-4177-bfd1-832b362718a8/spike-10k/services.log.gz",
+    "originalBytes": 2522342,
+    "sha256": "61d674f40c4eb32a1f4aa74733df8d73e37375c7042a241723a1655b03f265ae"
+  },
+  {
+    "path": "flash-test-cbfd64a6-1239-4177-bfd1-832b362718a8/spike-10k/sources.json.gz",
+    "originalBytes": 38217,
+    "sha256": "3f96907ac8a2d108d186d71842762be75a4262a3716f493906e7bb9a39bc63b3"
+  },
+  {
+    "path": "flash-default-policy-2api-spike.log.gz",
+    "originalBytes": 650,
+    "sha256": "642bfdfcb43a058575653354f6b8128f784ce731b7096ee1633aea1b58481478"
+  },
+  {
+    "path": "flash-test-d9318653-3a36-4df6-b94b-2dde0e213c9f/spike-10k/compose.yaml.gz",
+    "originalBytes": 5659,
+    "sha256": "5c905c037dc55d09e0de9f1e431a54bf3bfb96022465fd2181f36544411c19ed"
+  },
+  {
+    "path": "flash-test-d9318653-3a36-4df6-b94b-2dde0e213c9f/spike-10k/host.json.gz",
+    "originalBytes": 39334,
+    "sha256": "ebb6c68e27c645a68c2eb74e9e4669aef5c2254945dad2cf823b17bfc9b14368"
+  },
+  {
+    "path": "flash-test-d9318653-3a36-4df6-b94b-2dde0e213c9f/spike-10k/network-after.txt.gz",
+    "originalBytes": 26043,
+    "sha256": "93a8c142e27229b41af9bc2cb2cf68e72912adf992dd0cd61737e3f139d23560"
+  },
+  {
+    "path": "flash-test-d9318653-3a36-4df6-b94b-2dde0e213c9f/spike-10k/resources.jsonl.gz",
+    "originalBytes": 63877,
+    "sha256": "4d6da6d9f3f22c99c506389510cd4d95d1d59f26993e3ef2a623ea14243b02f0"
+  },
+  {
+    "path": "flash-test-d9318653-3a36-4df6-b94b-2dde0e213c9f/spike-10k/result.json.gz",
+    "originalBytes": 4507518,
+    "sha256": "36ede0a0dd73ab169bb1c8a6b1e9bb173e034fb8ac193fdcca32ad40ee5487d1"
+  },
+  {
+    "path": "flash-test-d9318653-3a36-4df6-b94b-2dde0e213c9f/spike-10k/services.log.gz",
+    "originalBytes": 2458318,
+    "sha256": "f6123581ca91beb03354d25223f847df7d1968f9f7f028480819e8c07548914c"
+  },
+  {
+    "path": "flash-test-d9318653-3a36-4df6-b94b-2dde0e213c9f/spike-10k/sources.json.gz",
+    "originalBytes": 38217,
+    "sha256": "3f96907ac8a2d108d186d71842762be75a4262a3716f493906e7bb9a39bc63b3"
+  },
+  {
+    "path": "flash-default-policy-3api-spike.log.gz",
+    "originalBytes": 604,
+    "sha256": "65cfa86c6a2219017930c7cf58bac5895fea1716c0aec346d76ee894feb03dd7"
+  }
+]

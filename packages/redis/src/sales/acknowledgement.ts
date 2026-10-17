@@ -1,6 +1,7 @@
 import { normalizeIdentifier, normalizePurchase, type PurchaseInput, type PurchaseResponse } from '@flash/contracts';
-import { createRedisConnection, assertRedisSafety } from '../index.js';
-import { admitPurchase, admissionKeys, type Reservation } from './admission.js';
+import { AdmissionConnections, CapacityError } from './connection-pool.js';
+import { parseAdmissionReply, purchaseCommand, admissionKeys, type Reservation } from './admission.js';
+import type { AdmissionMetrics, AdmissionOperation } from './pool-metrics.js';
 import type { AdmissionConfiguration } from './configuration.js';
 import { confirmationScript, recoveryScript } from './state-scripts.js';
 
@@ -11,39 +12,21 @@ export interface PersistedAdmission { orderId?: string; identifier: string; admi
 export type Confirmation =
   | { status: 'present'; reservation: ValidatedReservation }
   | { status: 'confirming'; diagnostic: 'missing_without_absence_proof' | 'admission_unavailable' };
-class CapacityError extends Error {}
-type Connection = ReturnType<typeof createRedisConnection>;
+type Connection = Parameters<Parameters<AdmissionConnections['own']>[0]>[0];
 
-/** One operation per socket, bounded concurrency, no waiting queue or automatic replay. */
+/** Reusable exclusive sockets, bounded concurrency, library-default acquisition wait, no automatic replay. */
 export class RedisAdmission {
-  private active = 0;
-  constructor(private readonly url: string, private readonly concurrency = 16, private readonly timeoutMs = 3000,
-    private readonly failpoint?: (boundary: string) => Promise<void>) {
+  private readonly connections: AdmissionConnections;
+  constructor(private readonly url: string, private readonly concurrency: number | undefined = undefined, private readonly timeoutMs = 3000,
+    private readonly failpoint?: (boundary: string) => Promise<void>, metrics?: AdmissionMetrics) {
     if (failpoint && process.env.NODE_ENV !== 'test') throw new Error('Failpoints require test mode');
-    if (!Number.isSafeInteger(concurrency) || concurrency < 1 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Invalid admission limits');
+    if (concurrency !== undefined && process.env.NODE_ENV !== 'test') throw new Error('Pool size overrides require test mode');
+    if ((concurrency !== undefined && (!Number.isSafeInteger(concurrency) || concurrency < 1)) || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Invalid admission limits');
+    this.connections = new AdmissionConnections(url, concurrency, timeoutMs, metrics);
   }
-  private async own<T>(operation: (redis: Connection) => Promise<T>): Promise<T> {
-    if (this.active >= this.concurrency) throw new CapacityError('Admission capacity exhausted');
-    const redis = createRedisConnection(this.url, 'admission', this.timeoutMs);
-    this.active++;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        (async () => { await redis.connect(); await assertRedisSafety(redis);
-          const persistence = await redis.info('persistence');
-          if (!persistence.includes('aof_enabled:1\r\n') || !persistence.includes('aof_last_write_status:ok\r\n')) throw new Error('AOF persistence unavailable');
-          return operation(redis); })(),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => {
-          if (redis.isOpen) redis.destroy();
-          reject(new Error('Admission deadline exceeded'));
-        }, this.timeoutMs); }),
-      ]);
-    } finally {
-      clearTimeout(timer);
-      if (redis.isOpen) redis.destroy();
-      this.active--;
-    }
-  }
+  connect(): Promise<void> { return this.connections.connect(); }
+  close(): void { this.connections.close(); }
+  private own<T>(operation: (redis: Connection) => Promise<T>, kind: AdmissionOperation): Promise<T> { return this.connections.own(operation, kind); }
   private async confirm(redis: Connection, saleId: string, identifier: string): Promise<Confirmation> {
     await this.failpoint?.('before_lookup');
     const reply = await redis.sendCommand(['EVAL', confirmationScript, '5', ...admissionKeys(saleId), identifier, saleId]);
@@ -57,22 +40,24 @@ export class RedisAdmission {
   async place(saleId: string, input: PurchaseInput): Promise<PurchaseResponse> {
     const payload = normalizePurchase(saleId, input);
     try {
-      return await this.own(async redis => {
+      const command = purchaseCommand(payload);
+      const reply = await this.own(async redis => {
         await this.failpoint?.('before_send');
-        const result = await admitPurchase(redis, payload.saleId, payload);
-        await this.failpoint?.('after_send');
-        if (result.status === 'rejected') return { status: 'REJECTED', reason: result.reason };
-        await this.failpoint?.('before_acknowledgement');
-        const existingOrder = { status: 'PROCESSING', phase: 'queued' } as const;
-        return result.status === 'already_placed' ? { status: 'REJECTED', reason: 'already_placed', existingOrder } : existingOrder;
-      });
+        return redis.sendCommand(command);
+      }, 'purchase');
+      await this.failpoint?.('after_send');
+      const result = parseAdmissionReply(reply);
+      if (result.status === 'rejected') return { status: 'REJECTED', reason: result.reason };
+      await this.failpoint?.('before_acknowledgement');
+      const existingOrder = { status: 'PROCESSING', phase: 'queued' } as const;
+      return result.status === 'already_placed' ? { status: 'REJECTED', reason: 'already_placed', existingOrder } : existingOrder;
     } catch (error) {
       return error instanceof CapacityError ? { status: 'REJECTED', reason: 'busy' } : { status: 'PROCESSING', phase: 'confirming' };
     }
   }
   async lookup(saleId: string, identifier: string): Promise<Confirmation> {
     const sale = normalizeIdentifier(saleId), person = normalizeIdentifier(identifier);
-    try { return await this.own(redis => this.confirm(redis, sale, person)); }
+    try { return await this.own(redis => this.confirm(redis, sale, person), 'lookup'); }
     catch { return { status: 'confirming', diagnostic: 'admission_unavailable' }; }
   }
   /** Validate mappings before the DB transaction; no persistence/replication wait. */
@@ -93,6 +78,6 @@ export class RedisAdmission {
       // A peer cannot observe a valid epoch temporarily removed by this recovery.
       await redis.sendCommand(['EVAL', recoveryScript, '5', ...admissionKeys(sale.id), run, JSON.stringify(orders), sale.id,
         String(Date.parse(sale.startsAt)), String(Date.parse(sale.endsAt)), String(sale.initialStock)]);
-    });
+    }, 'recovery');
   }
 }

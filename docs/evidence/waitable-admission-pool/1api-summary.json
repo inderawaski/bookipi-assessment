@@ -1,0 +1,78 @@
+{
+  "project": "flash-test-c6c35862-67b6-47bd-91fd-800c7af13370",
+  "startedAt": "2026-10-17T03:08:26.086Z",
+  "apiReplicas": 1,
+  "workerReplicas": 1,
+  "settings": {
+    "connections": 10000,
+    "timeoutMs": 30000,
+    "drainTimeoutMs": 300000,
+    "dispatchWindowMs": 1000,
+    "scheduleWindowMs": 900
+  },
+  "validDispatch": true,
+  "invalidReasons": [],
+  "dispatchLastMs": 903.041792,
+  "passed": true,
+  "runStatus": "valid_dispatch",
+  "error": null,
+  "orders": 100,
+  "admissions": 100,
+  "invariants": {
+    "noOversell": true,
+    "uniqueAllocations": true,
+    "stockConserved": true,
+    "mappingsMatch": true,
+    "uniqueOrders": true,
+    "drained": true,
+    "ordersMatchAdmissions": true,
+    "acknowledgedPreserved": true,
+    "admissionsWithinWindow": true,
+    "orderLatencyObserved": true,
+    "orderP99UnderTwoSeconds": true,
+    "allOrdersWithinTenSeconds": true,
+    "orderObserverHealthy": true,
+    "filled": true
+  },
+  "orderLatencyMs": {
+    "p50": 1106.43994140625,
+    "p95": 1541.3759765625,
+    "p99": 1568.450927734375
+  },
+  "orderMaxMs": 1568.451904296875,
+  "httpStatuses": {
+    "202": 100,
+    "409": 5483,
+    "429": 386,
+    "504": 4031
+  },
+  "perApiTiming": [
+    {
+      "replica": 1,
+      "completedHttpRequests": 6025,
+      "accumulatedHandlingSeconds": 40.17414623200003,
+      "meanHandlingMs": 6.66790808829876
+    }
+  ],
+  "completedHttpRequests": 6025,
+  "accumulatedHandlingSeconds": 40.17414623200003,
+  "weightedApiMeanHandlingMs": 6.66790808829876,
+  "clientMeanResponseMs": 2683.1191718732,
+  "clientResponseLatencyMs": {
+    "p50": 2165.903708,
+    "p95": 5249.632958,
+    "p99": 5543.691792000001
+  },
+  "clientMeanByStatusMs": {
+    "202": 270.39407335000004,
+    "409": 3082.953543985227,
+    "429": 1676.8366585803108,
+    "504": 2295.4748398695115
+  },
+  "pollErrors": [
+    {
+      "at": "2026-10-17T03:08:36.156Z",
+      "error": "SyntaxError: Unexpected token '<', \"<html>\r\n<h\"... is not valid JSON"
+    }
+  ]
+}

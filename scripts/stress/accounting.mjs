@@ -7,6 +7,7 @@ export const scenarios = [
   { name: 'burst-3s', stock: 100, requests: 5000, identifiers: 5000, dispatchWindowMs: 3000 },
   { name: 'burst-1s', stock: 100, requests: 5000, identifiers: 5000 },
   { name: 'spike-10k', stock: 100, requests: 10000, identifiers: 10000, expectFill: true, orderSlo: true },
+  { name: 'spike-10k-2s', stock: 100, requests: 10000, identifiers: 10000, dispatchWindowMs: 2000, expectFill: true, orderSlo: true, optional: true },
   { name: 'same-key-retries', stock: 10, requests: 100, identifiers: 10, sameKey: true, scheduleWindowMs: 0 },
   { name: 'healthy', stock: 8, requests: 8, identifiers: 8, expectFill: true },
   { name: 'closing-worker-crash', stock: 1000, requests: 1000, identifiers: 1000, boundary: 'closing', failure: 'worker' },
